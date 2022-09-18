@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::{str, vec};
 
 abigen!(IUniswapV2Router02, "abis/IUniswapV2Router02.json");
+abigen!(Quoter, "abis/Quoter.json");
 
 enum DEX {
     SUSHISWAP,
@@ -76,38 +77,6 @@ async fn swap_test() {
         .parse::<Address>()
         .unwrap();
 
-    let tokens = vec![usdc_addr, dai_addr];
-
-    let result = sushiswap
-        .get_amounts_out(U256::from(10_i32.pow(9)), tokens)
-        .call()
-        .await
-        .unwrap();
-
-    println!("Result is {}", result[1]);
-}
-
-#[tokio::main]
-async fn main() {
-    dotenv().ok();
-    let polygon_rpc_url =
-        dotenv::var("ALCHEMY_POLYGON_RPC_URL").expect("Polygon RPC url expected in .env file");
-
-    let client = Provider::<Http>::try_from(polygon_rpc_url).unwrap();
-    let client = Arc::new(client);
-
-    let router_addr = str_to_addr(DEX::SUSHISWAP.get_router_address());
-
-    let sushiswap = IUniswapV2Router02::new(router_addr, Arc::clone(&client));
-
-    let usdc_addr = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
-        .parse::<Address>()
-        .unwrap();
-
-    let dai_addr = "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
-        .parse::<Address>()
-        .unwrap();
-
     let tokens = vec![usdc_addr, dai_addr, usdc_addr];
 
     let result = sushiswap
@@ -119,4 +88,42 @@ async fn main() {
     println!("Index 0: {}", result[0]);
     println!("Index 1: {}", result[1]);
     println!("Index 2: {}", result[2]);
+}
+
+async fn uniswap_price_v3() {
+    dotenv().ok();
+    let polygon_rpc_url =
+        dotenv::var("ALCHEMY_POLYGON_RPC_URL").expect("Polygon RPC url expected in .env file");
+    let client = Provider::<Http>::try_from(polygon_rpc_url).unwrap();
+    let client = Arc::new(client);
+
+    let quoter_address = str_to_addr("0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6");
+    let router = Quoter::new(quoter_address, Arc::clone(&client));
+
+    let usdc_addr = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174"
+        .parse::<Address>()
+        .unwrap();
+
+    let dai_addr = "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063"
+        .parse::<Address>()
+        .unwrap();
+
+    let result = router
+        .quote_exact_input_single(
+            usdc_addr,
+            dai_addr,
+            500_u32,
+            U256::from(1000000),
+            U256::zero(),
+        )
+        .call()
+        .await
+        .unwrap();
+
+    println!("Output is: {}", result);
+}
+
+#[tokio::main]
+async fn main() {
+    uniswap_price_v3().await;
 }
