@@ -1,9 +1,14 @@
 #![allow(dead_code)]
 
 use dotenv::dotenv;
-use ethers::prelude::*;
+use ethers::{prelude::*, providers};
+use price::Price;
 use std::sync::Arc;
 use std::{str, vec};
+
+mod consts;
+mod price;
+mod utils;
 
 abigen!(IUniswapV2Router02, "abis/IUniswapV2Router02.json");
 abigen!(Quoter, "abis/Quoter.json");
@@ -125,5 +130,20 @@ async fn uniswap_price_v3() {
 
 #[tokio::main]
 async fn main() {
-    uniswap_price_v3().await;
+    dotenv().ok();
+    let polygon_rpc_url =
+        dotenv::var("ALCHEMY_POLYGON_RPC_URL").expect("Polygon RPC url expected in .env file");
+    let provider = Provider::<Http>::try_from(polygon_rpc_url).unwrap();
+    let protocol = Price::new(provider);
+
+    let ans = protocol
+        .quote(
+            consts::Protocol::SUSHISWAP,
+            consts::ERC20Token::USDC,
+            consts::ERC20Token::DAI,
+            U256::from(1000000),
+        )
+        .await;
+
+    println!("Dai returned: {}", ans);
 }
