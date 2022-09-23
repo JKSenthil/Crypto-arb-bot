@@ -34,7 +34,7 @@ impl<M: Middleware> Price<M> {
     }
 
     pub async fn quote(
-        self,
+        &self,
         protocol: Protocol,
         token_in: ERC20Token,
         token_out: ERC20Token,
@@ -53,6 +53,29 @@ impl<M: Middleware> Price<M> {
                 .await
                 .unwrap();
             return result[1];
+        }
+        // TODO implement uniswap v3
+        U256::zero()
+    }
+
+    pub async fn quote_route(
+        &self,
+        protocol: Protocol,
+        path: Vec<ERC20Token>,
+        amount_in: U256,
+    ) -> U256 {
+        if protocol.is_uniswapV2_protocol() {
+            let result = self.uniswap_v2[protocol as usize]
+                .get_amounts_out(
+                    amount_in,
+                    path.iter()
+                        .map(|x| parse_address(x.get_token_addr()))
+                        .collect(),
+                )
+                .call()
+                .await
+                .unwrap();
+            return result[result.len() - 1];
         }
         // TODO implement uniswap v3
         U256::zero()
