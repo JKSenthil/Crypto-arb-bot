@@ -5,3 +5,4 @@ mod tokens;
 pub use tokens::ERC20Token;
 
 mod routes;
+pub use routes::Route;

@@ -8,21 +8,31 @@ use super::Protocol::*;
 use super::{ERC20Token, Protocol};
 
 pub struct Route {
-    path: Vec<ERC20Token>,
-    protocols: Vec<Protocol>,
-    amount_in: U256,
+    pub path: Vec<ERC20Token>,
+    pub protocols: Vec<Protocol>,
+    pub amount_in: U256,
 }
 
 lazy_static! {
     pub static ref ROUTES: Vec<Route> = vec![
         Route {
             path: vec![USDC, WETH, USDC],
-            protocols: vec![UNISWAP_V3, SUSHISWAP],
+            protocols: vec![UNISWAP_V3, JETSWAP],
             amount_in: convert_to_U256(200, USDC.get_token_decimal())
         },
         Route {
             path: vec![USDC, WBTC, USDC],
-            protocols: vec![UNISWAP_V3, SUSHISWAP],
+            protocols: vec![UNISWAP_V3, JETSWAP],
+            amount_in: convert_to_U256(200, USDC.get_token_decimal())
+        },
+        Route {
+            path: vec![WETH, USDC, WETH],
+            protocols: vec![UNISWAP_V3, JETSWAP],
+            amount_in: convert_to_U256(200, USDC.get_token_decimal())
+        },
+        Route {
+            path: vec![WBTC, USDC, WBTC],
+            protocols: vec![UNISWAP_V3, JETSWAP],
             amount_in: convert_to_U256(200, USDC.get_token_decimal())
         }
     ];
