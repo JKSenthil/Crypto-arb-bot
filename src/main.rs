@@ -43,12 +43,14 @@ async fn main() {
     let provider = Provider::<Http>::try_from(polygon_rpc_url).unwrap();
     let price = Price::new(provider);
 
-    let ans = price.quote(SUSHISWAP, USDC, DAI, U256::from(1000000)).await;
+    let ans = price
+        .quote(UNISWAP_V3, USDC, DAI, U256::from(1000000))
+        .await;
 
     println!("Dai returned: {}", ans);
 
     let ans = price
-        .quote_route(QUICKSWAP, vec![USDC, DAI, USDC], U256::from(1000000))
+        .quote_route(UNISWAP_V3, vec![USDC, DAI, USDC], U256::from(1000000))
         .await;
 
     println!("USDC returned: {}", ans);
