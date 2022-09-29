@@ -33,6 +33,6 @@ impl Protocol {
     }
 
     pub fn is_uniswapV2_protocol(self) -> bool {
-        return !(self as usize > 4);
+        return (self as usize) < 5;
     }
 }

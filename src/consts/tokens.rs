@@ -8,8 +8,6 @@ pub enum ERC20Token {
     WETH,
 }
 
-struct UniswapV3Fee {}
-
 struct ERC20TokenData {
     symbol: &'static str,
     name: &'static str,
