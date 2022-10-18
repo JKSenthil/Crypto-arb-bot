@@ -33,7 +33,7 @@ async fn aave_example() {
     println!("Address {} has health factor: {}", account, health_factor);
 }
 
-async fn pull_latest_block_hash_v2() {
+async fn pull_latest_block_number() {
     dotenv().ok();
     let polygon_ws_url =
         dotenv::var("ALCHEMY_POLYGON_RPC_WS_URL").expect("Polygon RPC url expected in .env file");
@@ -45,30 +45,7 @@ async fn pull_latest_block_hash_v2() {
     let mut subscription_stream = provider.subscribe_blocks().await.unwrap();
 
     while let Some(block) = subscription_stream.next().await {
-        println!("block hash: {:?},", block.number.unwrap());
-    }
-}
-
-async fn pull_latest_block_hash() {
-    dotenv().ok();
-
-    let polygon_ws_url =
-        dotenv::var("ALCHEMY_POLYGON_RPC_WS_URL").expect("Polygon RPC url expected in .env file");
-
-    let provider = Provider::<Ws>::connect(polygon_ws_url).await.unwrap();
-
-    // filter by latest block
-    let _filter = Filter::new().select(BlockNumber::Latest);
-
-    // provider.watch(&filter);
-    let mut watch_block_stream = provider.watch_blocks().await.unwrap().fuse();
-
-    loop {
-        futures_util::select! {
-            tx = watch_block_stream.next() => {
-                println!("New Block {:#?}", tx.unwrap());
-            }
-        }
+        println!("block number: {:?},", block.number.unwrap());
     }
 }
 
@@ -123,8 +100,7 @@ async fn main() {
     let price = Arc::new(Price::new(provider));
 
     // let mut subscription_stream = provider.subscribe_blocks().await.unwrap();
-    //while let Some(block) = subscription_stream.next().await {
-    // }
+    // while let Some(block) = subscription_stream.next().await {}
 
     let now = Instant::now();
     for route in ROUTES.iter() {
