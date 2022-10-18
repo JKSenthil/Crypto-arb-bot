@@ -125,7 +125,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "0x88E2840bA66c7B618f37AEE2DD9c448997D41690",
         "0x774b407f518C91ae79250625291AA14440D5d8fB",
         "0x98648D396a35D1FF9ED354432B2C98C37931F69C",
-        "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
     ]
     .map(|x| x.parse::<Address>().unwrap());
 
