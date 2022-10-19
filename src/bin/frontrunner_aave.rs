@@ -179,7 +179,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let encoded_prefix = "0x00a718a9";
 
     // TODO maybe change? this is quite a alot
-    let max_gas = U256::from(20_650_000);
+    let max_gas = U256::from(15_650_000);
 
     // construct stream
     let known_liquidators = [
