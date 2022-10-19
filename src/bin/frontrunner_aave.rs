@@ -3,15 +3,15 @@ use std::sync::Arc;
 
 use dotenv::dotenv;
 use ethers::prelude::{abigen, SignerMiddleware};
-use ethers::providers::{Http, SubscriptionStream};
+use ethers::providers::{Http, ProviderError, SubscriptionStream};
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{Transaction, U256};
+use ethers::types::{GethTrace, Transaction, U256};
 use ethers::utils;
 use ethers::{
     abi::{parse_abi, Token},
     prelude::{BaseContract, Provider},
     providers::{Middleware, Ws},
-    types::{Address, Bytes, GethDebugTracingOptions, H256},
+    types::{Address, Bytes},
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -30,27 +30,65 @@ pub struct PendingTransactionOptions {
     pub hashes_only: Option<bool>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugTraceCallOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_price: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugTraceCallTracer {
+    #[serde(default)]
+    pub tracer: String,
+}
+
+impl DebugTraceCallOptions {
+    pub fn generate(txn: Transaction) -> Self {
+        DebugTraceCallOptions {
+            from: Some(format!("{:?}", txn.from)),
+            to: format!("{:?}", txn.to.unwrap()),
+            gas_price: None,
+            value: None,
+            data: Some(txn.input.to_string()),
+        }
+    }
+}
+
+impl DebugTraceCallTracer {
+    pub fn new() -> Self {
+        DebugTraceCallTracer {
+            tracer: "callTracer".to_string(),
+        }
+    }
+}
+
 async fn get_args(
     provider: &Provider<Http>,
-    txn_hash: H256,
+    txn: Transaction,
     encoded_function_preface: &str,
 ) -> Option<String> {
-    let res = provider
-        .debug_trace_transaction(
-            txn_hash,
-            GethDebugTracingOptions {
-                disable_storage: None,
-                disable_stack: None,
-                enable_memory: None,
-                enable_return_data: None,
-                tracer: Some("callTracer".to_string()),
-                timeout: Some("5s".to_string()),
-            },
-        )
+    let a = DebugTraceCallOptions::generate(txn);
+    let a = utils::serialize(&a);
+    let b = "latest";
+    let b = utils::serialize(&b);
+    let c = DebugTraceCallTracer::new();
+    let c = utils::serialize(&c);
+
+    let res: ProviderError = provider
+        .request::<_, GethTrace>("debug_traceCall", [a, b, c])
         .await
         .unwrap_err();
     let response = res.to_string();
-    println!("{}", response);
     match response.find(encoded_function_preface) {
         Some(index) => {
             let str = &response[index..index + 330];
@@ -116,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
     let provider = Provider::<Http>::try_from(std::env::var("ALCHEMY_POLYGON_RPC_URL")?)?;
-    // let provider = Arc::new(provider);
+    let provider = Arc::new(provider);
     let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await?;
     let provider_ws = Arc::new(provider_ws);
 
@@ -155,7 +193,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "0x88E2840bA66c7B618f37AEE2DD9c448997D41690",
         "0x774b407f518C91ae79250625291AA14440D5d8fB",
         "0x98648D396a35D1FF9ED354432B2C98C37931F69C",
-        "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
     ]
     .map(|x| x.to_string())
     .to_vec();
@@ -176,33 +213,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{:?}", txn.hash)
             );
 
-            if let Some(liquidation_call_args) = get_args(&provider, txn.hash, encoded_prefix).await
-            {
+            let max_priority_fee_per_gas = txn.max_priority_fee_per_gas;
+            let max_gas_fee = txn.max_fee_per_gas;
+            let gas_fee: U256;
+            if max_priority_fee_per_gas == None && max_gas_fee == None {
+                println!("  No gas estimate found");
+                continue;
+            } else if let Some(f) = max_priority_fee_per_gas {
+                gas_fee = f;
+            } else {
+                gas_fee = max_gas_fee.unwrap();
+            }
+
+            if let Some(liquidation_call_args) = get_args(&provider, txn, encoded_prefix).await {
                 let args = parse_args(&contract, liquidation_call_args.as_str());
                 let mut args = args.into_iter();
 
                 let collateral = args.next().unwrap().into_address().unwrap();
                 let debt = args.next().unwrap().into_address().unwrap();
                 let user = args.next().unwrap().into_address().unwrap();
-                let debtToCover = args.next().unwrap().into_uint().unwrap();
+                let debt_amount = args.next().unwrap().into_uint().unwrap();
 
-                let dodoPool = get_dodo_pool(debt);
-                if let Some(dodoPool) = dodoPool {
+                let dodo_pool = get_dodo_pool(debt);
+                if let Some(dodo_pool) = dodo_pool {
                     let uniswap_router = QUICKSWAP.parse::<Address>().unwrap();
-
-                    let gas_fee = txn.max_priority_fee_per_gas.unwrap();
 
                     // TODO pass args into smart contract and win $$$
                     // and don't forget to bid additional gas so that
                     // your txn is picked up before your opponents!
                     match liquidations_contract
                         .liquidation(
-                            dodoPool,
+                            dodo_pool,
                             uniswap_router,
                             collateral,
                             debt,
                             user,
-                            debtToCover,
+                            debt_amount,
                         )
                         .gas(max_gas)
                         .gas_price(gas_fee + gas_fee) // double gas price for speedup
@@ -210,9 +256,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .await
                     {
                         Ok(pending_txn) => {
-                            println!("Txn submitted: {}", pending_txn.tx_hash())
+                            println!("  Txn submitted: {}", pending_txn.tx_hash())
                         }
-                        Err(e) => println!("Err received: {}", e),
+                        Err(e) => println!("    Err received: {}", e),
                     }
                 }
             }

@@ -13,7 +13,8 @@ use ethers::{
     providers::{Http, JsonRpcClientWrapper, Middleware, Provider, SubscriptionStream, Ws},
     signers::{LocalWallet, Signer},
     types::{
-        Address, Bytes, Chain, GethDebugTracingOptions, Transaction, TransactionReceipt, H256, U256,
+        Address, Bytes, Chain, GethDebugTracingOptions, TraceType, Transaction, TransactionReceipt,
+        H256, U256,
     },
     utils::{self, Anvil},
 };
@@ -89,6 +90,9 @@ async fn get_args(
     txn_hash: H256,
     encoded_function_preface: &str,
 ) -> Option<String> {
+    let res = provider.debug_trace_transaction(tx_hash, trace_options)
+    
+    println!("{}", response);
     let res = provider
         .debug_trace_transaction(
             txn_hash,
@@ -104,7 +108,6 @@ async fn get_args(
         .await
         .unwrap_err();
     let response = res.to_string();
-    println!("{}", response);
     match response.find(encoded_function_preface) {
         Some(index) => {
             let str = &response[index..index + 330];
@@ -117,6 +120,18 @@ async fn get_args(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
+
+        // TODO try parsing the error and see if it works in prod
+        // let liquidation_call_args = get_args(&provider, txn, encoded_prefix).await.unwrap();
+        // println!("Time taken {}ms", now.elapsed().as_millis());
+        // let args = parse_args(&contract, liquidation_call_args.as_str());
+        // let mut args = args.into_iter();
+        // println!("{}", args.next().unwrap().into_address().unwrap());
+        // println!("{}", args.next().unwrap().into_address().unwrap());
+        // println!("{}", args.next().unwrap().into_address().unwrap());
+        // println!("{}", args.next().unwrap().into_uint().unwrap());
+    
+        // exit(0);
 
     // let base_contract = BaseContract::from(
     //     parse_abi(&[
