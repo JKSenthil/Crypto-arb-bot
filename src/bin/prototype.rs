@@ -85,52 +85,21 @@ pub struct PendingTransactionOptions {
     pub hashes_only: Option<bool>,
 }
 
-async fn get_args(
-    provider: &Provider<Http>,
-    txn_hash: H256,
-    encoded_function_preface: &str,
-) -> Option<String> {
-    let res = provider.debug_trace_transaction(tx_hash, trace_options)
-    
-    let res = provider
-        .debug_trace_transaction(
-            txn_hash,
-            GethDebugTracingOptions {
-                disable_storage: None,
-                disable_stack: None,
-                enable_memory: None,
-                enable_return_data: None,
-                tracer: Some("callTracer".to_string()),
-                timeout: Some("5s".to_string()),
-            },
-        )
-        .await
-        .unwrap_err();
-    let response = res.to_string();
-    match response.find(encoded_function_preface) {
-        Some(index) => {
-            let str = &response[index..index + 330];
-            Some(str.to_string())
-        }
-        None => None,
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-        // TODO try parsing the error and see if it works in prod
-        // let liquidation_call_args = get_args(&provider, txn, encoded_prefix).await.unwrap();
-        // println!("Time taken {}ms", now.elapsed().as_millis());
-        // let args = parse_args(&contract, liquidation_call_args.as_str());
-        // let mut args = args.into_iter();
-        // println!("{}", args.next().unwrap().into_address().unwrap());
-        // println!("{}", args.next().unwrap().into_address().unwrap());
-        // println!("{}", args.next().unwrap().into_address().unwrap());
-        // println!("{}", args.next().unwrap().into_uint().unwrap());
-    
-        // exit(0);
+    // TODO try parsing the error and see if it works in prod
+    // let liquidation_call_args = get_args(&provider, txn, encoded_prefix).await.unwrap();
+    // println!("Time taken {}ms", now.elapsed().as_millis());
+    // let args = parse_args(&contract, liquidation_call_args.as_str());
+    // let mut args = args.into_iter();
+    // println!("{}", args.next().unwrap().into_address().unwrap());
+    // println!("{}", args.next().unwrap().into_address().unwrap());
+    // println!("{}", args.next().unwrap().into_address().unwrap());
+    // println!("{}", args.next().unwrap().into_uint().unwrap());
+
+    // exit(0);
 
     // let base_contract = BaseContract::from(
     //     parse_abi(&[
@@ -146,19 +115,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = Provider::<Http>::try_from(std::env::var("ALCHEMY_POLYGON_RPC_URL")?)?;
 
-    let encoded_prefix = "0x00a718a9";
-    let a = get_args(
-        &provider,
-        "0x89fda805961af897033643cf21df3855a188b92cdde9a4846f284c11fd531e42"
-            .parse::<H256>()
-            .unwrap(),
-        encoded_prefix,
-    )
-    .await
-    .unwrap();
+    // let encoded_prefix = "0x00a718a9";
+    // let a = get_args(
+    //     &provider,
+    //     "0x89fda805961af897033643cf21df3855a188b92cdde9a4846f284c11fd531e42"
+    //         .parse::<H256>()
+    //         .unwrap(),
+    //     encoded_prefix,
+    // )
+    // .await
+    // .unwrap();
 
-    println!("a: {}", a);
-    exit(0);
+    // println!("a: {}", a);
+    // exit(0);
 
     let method = utils::serialize(&"alchemy_pendingTransactions");
     let v = vec!["0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()];
