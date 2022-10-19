@@ -1,5 +1,6 @@
 use std::{
     convert::TryFrom,
+    process::exit,
     str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
@@ -11,7 +12,9 @@ use ethers::{
     prelude::{abigen, builders::ContractCall, BaseContract, SignerMiddleware},
     providers::{Http, JsonRpcClientWrapper, Middleware, Provider, SubscriptionStream, Ws},
     signers::{LocalWallet, Signer},
-    types::{Address, Bytes, Chain, Transaction, TransactionReceipt, U256},
+    types::{
+        Address, Bytes, Chain, GethDebugTracingOptions, Transaction, TransactionReceipt, H256, U256,
+    },
     utils::{self, Anvil},
 };
 use futures_util::StreamExt;
@@ -81,6 +84,36 @@ pub struct PendingTransactionOptions {
     pub hashes_only: Option<bool>,
 }
 
+async fn get_args(
+    provider: &Provider<Http>,
+    txn_hash: H256,
+    encoded_function_preface: &str,
+) -> Option<String> {
+    let res = provider
+        .debug_trace_transaction(
+            txn_hash,
+            GethDebugTracingOptions {
+                disable_storage: None,
+                disable_stack: None,
+                enable_memory: None,
+                enable_return_data: None,
+                tracer: Some("callTracer".to_string()),
+                timeout: Some("5s".to_string()),
+            },
+        )
+        .await
+        .unwrap_err();
+    let response = res.to_string();
+    println!("{}", response);
+    match response.find(encoded_function_preface) {
+        Some(index) => {
+            let str = &response[index..index + 330];
+            Some(str.to_string())
+        }
+        None => None,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -96,6 +129,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_node_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
     let provider = Provider::<Ws>::connect(rpc_node_url.clone()).await?;
     let provider_ws = Arc::new(provider);
+
+    let provider = Provider::<Http>::try_from(std::env::var("ALCHEMY_POLYGON_RPC_URL")?)?;
+
+    let encoded_prefix = "0x00a718a9";
+    let a = get_args(
+        &provider,
+        "0x89fda805961af897033643cf21df3855a188b92cdde9a4846f284c11fd531e42"
+            .parse::<H256>()
+            .unwrap(),
+        encoded_prefix,
+    )
+    .await
+    .unwrap();
+
+    println!("a: {}", a);
+    exit(0);
 
     let method = utils::serialize(&"alchemy_pendingTransactions");
     let v = vec!["0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()];
@@ -116,9 +165,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         provider_ws.subscribe([method, method_params]).await?;
     println!("4");
 
-    let item = stream.next().await.unwrap();
-    let tx: Transaction = serde_json::from_str(item.get()).unwrap();
-    println!("Transaction received: {:?}", tx);
+    while let item = stream.next().await.unwrap() {
+        let tx: Transaction = serde_json::from_str(item.get()).unwrap();
+        println!("Transaction received: {:?}", tx.hash);
+    }
 
     // // Subscribing requires sending the sub request and then subscribing to
     // // the returned sub_id

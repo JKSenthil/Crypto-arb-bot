@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dotenv::dotenv;
 use ethers::prelude::{abigen, SignerMiddleware};
-use ethers::providers::SubscriptionStream;
+use ethers::providers::{Http, SubscriptionStream};
 use ethers::signers::{LocalWallet, Signer};
 use ethers::types::{Transaction, U256};
 use ethers::utils;
@@ -31,11 +31,11 @@ pub struct PendingTransactionOptions {
 }
 
 async fn get_args(
-    provider_ws: &Provider<Ws>,
+    provider: &Provider<Http>,
     txn_hash: H256,
     encoded_function_preface: &str,
 ) -> Option<String> {
-    let res = provider_ws
+    let res = provider
         .debug_trace_transaction(
             txn_hash,
             GethDebugTracingOptions {
@@ -50,6 +50,7 @@ async fn get_args(
         .await
         .unwrap_err();
     let response = res.to_string();
+    println!("{}", response);
     match response.find(encoded_function_preface) {
         Some(index) => {
             let str = &response[index..index + 330];
@@ -114,6 +115,8 @@ fn get_dodo_pool(token_address: Address) -> Option<Address> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
+    let provider = Provider::<Http>::try_from(std::env::var("ALCHEMY_POLYGON_RPC_URL")?)?;
+    // let provider = Arc::new(provider);
     let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await?;
     let provider_ws = Arc::new(provider_ws);
 
@@ -152,6 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "0x88E2840bA66c7B618f37AEE2DD9c448997D41690",
         "0x774b407f518C91ae79250625291AA14440D5d8fB",
         "0x98648D396a35D1FF9ED354432B2C98C37931F69C",
+        "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
     ]
     .map(|x| x.to_string())
     .to_vec();
@@ -172,8 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{:?}", txn.hash)
             );
 
-            if let Some(liquidation_call_args) =
-                get_args(&provider_ws, txn.hash, encoded_prefix).await
+            if let Some(liquidation_call_args) = get_args(&provider, txn.hash, encoded_prefix).await
             {
                 let args = parse_args(&contract, liquidation_call_args.as_str());
                 let mut args = args.into_iter();
