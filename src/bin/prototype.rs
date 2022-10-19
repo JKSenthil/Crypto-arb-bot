@@ -92,7 +92,6 @@ async fn get_args(
 ) -> Option<String> {
     let res = provider.debug_trace_transaction(tx_hash, trace_options)
     
-    println!("{}", response);
     let res = provider
         .debug_trace_transaction(
             txn_hash,
