@@ -1,19 +1,34 @@
 use std::str::FromStr;
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use dotenv::dotenv;
 use ethers::prelude::{abigen, SignerMiddleware};
+use ethers::providers::SubscriptionStream;
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::U256;
+use ethers::types::{Transaction, U256};
+use ethers::utils;
 use ethers::{
     abi::{parse_abi, Token},
     prelude::{BaseContract, Provider},
-    providers::{Middleware, TransactionStream, Ws},
+    providers::{Middleware, Ws},
     types::{Address, Bytes, GethDebugTracingOptions, H256},
 };
 use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 
 abigen!(Liquidations, "abis/Liquidations.json");
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingTransactionOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hashes_only: Option<bool>,
+}
 
 async fn get_args(
     provider_ws: &Provider<Ws>,
@@ -109,11 +124,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = SignerMiddleware::new(provider_ws.clone(), wallet);
     let client = Arc::new(client);
 
+    let contract = BaseContract::from(
+        parse_abi(&[
+            "function liquidationCall(address collateral, address debt, address user, uint256 debtToCover, bool receiveAToken)",
+        ])?
+    );
+
     let liquidations_contract = Liquidations::new(
         "0x5D03B3678c120F3EcC04eb96dAAb6e15B012022e".parse::<Address>()?,
         client,
     );
 
+    let encoded_prefix = "0x00a718a9";
+
+    // TODO maybe change? this is quite a alot
+    let max_gas = U256::from(20_650_000);
+
+    // construct stream
     let known_liquidators = [
         "0x54999CBEA7ec48A373aCE8A5dDc1D6e6fF7F8202",
         "0x28d62d755D561e7468734Cd63c62ec960Cd4c1A7",
@@ -126,78 +153,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "0x774b407f518C91ae79250625291AA14440D5d8fB",
         "0x98648D396a35D1FF9ED354432B2C98C37931F69C",
     ]
-    .map(|x| x.parse::<Address>().unwrap());
+    .map(|x| x.to_string())
+    .to_vec();
+    let method = utils::serialize(&"alchemy_pendingTransactions");
+    let method_params = utils::serialize(&PendingTransactionOptions {
+        to_address: Some(known_liquidators),
+        from_address: None,
+        hashes_only: None,
+    });
+    let mut pending_txn_stream: SubscriptionStream<Ws, Box<RawValue>> =
+        provider_ws.subscribe([method, method_params]).await?;
 
-    let known_liquidators = HashSet::from(known_liquidators);
-
-    let contract = BaseContract::from(
-        parse_abi(&[
-            "function liquidationCall(address collateral, address debt, address user, uint256 debtToCover, bool receiveAToken)",
-        ])?
-    );
-
-    let encoded_prefix = "0x00a718a9";
-
-    // TODO maybe change? this is quite a alot
-    let max_gas = U256::from(20_650_000);
-
-    let pending_txn_hash_stream = provider_ws.subscribe_pending_txs().await?;
-    let mut pending_txn_stream = TransactionStream::new(&provider_ws, pending_txn_hash_stream, 12);
     println!("Listening to transactions");
-    while let Some(txn) = pending_txn_stream.next().await {
-        match txn {
-            Ok(txn) => {
-                if let Some(to_addr) = txn.to {
-                    if known_liquidators.contains(&to_addr) {
-                        println!(
-                            "Detected liquidation transaction with hash: {}",
-                            format!("{:?}", txn.hash)
-                        );
-                        if let Some(liquidation_call_args) =
-                            get_args(&provider_ws, txn.hash, encoded_prefix).await
-                        {
-                            let args = parse_args(&contract, liquidation_call_args.as_str());
-                            let mut args = args.into_iter();
+    while let Some(item) = pending_txn_stream.next().await {
+        if let Ok(txn) = serde_json::from_str::<Transaction>(item.get()) {
+            println!(
+                "Detected liquidation transaction with hash: {}",
+                format!("{:?}", txn.hash)
+            );
 
-                            let collateral = args.next().unwrap().into_address().unwrap();
-                            let debt = args.next().unwrap().into_address().unwrap();
-                            let user = args.next().unwrap().into_address().unwrap();
-                            let debtToCover = args.next().unwrap().into_uint().unwrap();
+            if let Some(liquidation_call_args) =
+                get_args(&provider_ws, txn.hash, encoded_prefix).await
+            {
+                let args = parse_args(&contract, liquidation_call_args.as_str());
+                let mut args = args.into_iter();
 
-                            let dodoPool = get_dodo_pool(debt);
-                            if let Some(dodoPool) = dodoPool {
-                                let uniswap_router = QUICKSWAP.parse::<Address>().unwrap();
+                let collateral = args.next().unwrap().into_address().unwrap();
+                let debt = args.next().unwrap().into_address().unwrap();
+                let user = args.next().unwrap().into_address().unwrap();
+                let debtToCover = args.next().unwrap().into_uint().unwrap();
 
-                                let gas_fee = txn.max_priority_fee_per_gas.unwrap();
+                let dodoPool = get_dodo_pool(debt);
+                if let Some(dodoPool) = dodoPool {
+                    let uniswap_router = QUICKSWAP.parse::<Address>().unwrap();
 
-                                // TODO pass args into smart contract and win $$$
-                                // and don't forget to bid additional gas so that
-                                // your txn is picked up before your opponents!
-                                match liquidations_contract
-                                    .liquidation(
-                                        dodoPool,
-                                        uniswap_router,
-                                        collateral,
-                                        debt,
-                                        user,
-                                        debtToCover,
-                                    )
-                                    .gas(max_gas)
-                                    .gas_price(gas_fee + gas_fee) // double gas price for speedup
-                                    .send()
-                                    .await
-                                {
-                                    Ok(pending_txn) => {
-                                        println!("Txn submitted: {}", pending_txn.tx_hash())
-                                    }
-                                    Err(e) => println!("Err received: {}", e),
-                                }
-                            }
+                    let gas_fee = txn.max_priority_fee_per_gas.unwrap();
+
+                    // TODO pass args into smart contract and win $$$
+                    // and don't forget to bid additional gas so that
+                    // your txn is picked up before your opponents!
+                    match liquidations_contract
+                        .liquidation(
+                            dodoPool,
+                            uniswap_router,
+                            collateral,
+                            debt,
+                            user,
+                            debtToCover,
+                        )
+                        .gas(max_gas)
+                        .gas_price(gas_fee + gas_fee) // double gas price for speedup
+                        .send()
+                        .await
+                    {
+                        Ok(pending_txn) => {
+                            println!("Txn submitted: {}", pending_txn.tx_hash())
                         }
+                        Err(e) => println!("Err received: {}", e),
                     }
                 }
             }
-            Err(_) => {}
         }
     }
 

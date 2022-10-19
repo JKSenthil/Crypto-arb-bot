@@ -9,11 +9,14 @@ use dotenv::dotenv;
 use ethers::{
     abi::{parse_abi, Token},
     prelude::{abigen, builders::ContractCall, BaseContract, SignerMiddleware},
-    providers::{Http, Provider},
+    providers::{Http, JsonRpcClientWrapper, Middleware, Provider, SubscriptionStream, Ws},
     signers::{LocalWallet, Signer},
-    types::{Address, Bytes, Chain, TransactionReceipt},
-    utils::Anvil,
+    types::{Address, Bytes, Chain, Transaction, TransactionReceipt, U256},
+    utils::{self, Anvil},
 };
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, value::RawValue};
 
 const QUICKSWAP: &str = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff";
 
@@ -67,75 +70,116 @@ fn parse_args(contract: &BaseContract, input: &str) -> Vec<Token> {
     return args;
 }
 
-fn print_type_of<T>(_: &T) {
-    println!("{}", std::any::type_name::<T>())
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingTransactionOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hashes_only: Option<bool>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    let base_contract = BaseContract::from(
-        parse_abi(&[
-            "function liquidationCall(address collateral, address debt, address user, uint256 debtToCover, bool receiveAToken)",
-        ])?
-    );
+    // let base_contract = BaseContract::from(
+    //     parse_abi(&[
+    //         "function liquidationCall(address collateral, address debt, address user, uint256 debtToCover, bool receiveAToken)",
+    //     ])?
+    // );
 
-    let input = "0x00a718a90000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f00000000000000000000000007bcdbb839d9f64f9009d8c44cf2a2ec38116ab6000000000000000000000000000000000000000000000000000000000459cc990000000000000000000000000000000000000000000000000000000000000000";
+    // let input = "0x00a718a90000000000000000000000002791bca1f2de4661ed88a30c99a7a9449aa84174000000000000000000000000c2132d05d31c914a87c6611c10748aeb04b58e8f00000000000000000000000007bcdbb839d9f64f9009d8c44cf2a2ec38116ab6000000000000000000000000000000000000000000000000000000000459cc990000000000000000000000000000000000000000000000000000000000000000";
 
-    let rpc_node_url = std::env::var("ALCHEMY_POLYGON_RPC_URL")?;
+    let rpc_node_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
+    let provider = Provider::<Ws>::connect(rpc_node_url.clone()).await?;
+    let provider_ws = Arc::new(provider);
+
+    let method = utils::serialize(&"alchemy_pendingTransactions");
+    let v = vec!["0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()];
+    let method_params = utils::serialize(&PendingTransactionOptions {
+        to_address: Some(v),
+        from_address: None,
+        hashes_only: None,
+    });
+
+    // let sub_id = provider_ws.trace_replay_transaction(hash, trace_type)
+    println!("2");
+    // let output = provider_ws
+    //     .request::<_, String>("eth_subscribe", [method, method_params])
+    //     .await
+    //     .unwrap();
+    // println!("sub_id: {}", output);
+    let mut stream: SubscriptionStream<Ws, Box<RawValue>> =
+        provider_ws.subscribe([method, method_params]).await?;
+    println!("4");
+
+    let item = stream.next().await.unwrap();
+    let tx: Transaction = serde_json::from_str(item.get()).unwrap();
+    println!("Transaction received: {:?}", tx);
+
+    // // Subscribing requires sending the sub request and then subscribing to
+    // // the returned sub_id
+    // let block_num: u64 = ipc.request::<_, U256>("eth_blockNumber", ()).await.unwrap().as_u64();
+    // let mut blocks = Vec::new();
+    // for _ in 0..3 {
+    //     let item = stream.next().await.unwrap();
+    //     let block: Block<TxHash> = serde_json::from_str(item.get()).unwrap();
+    //     blocks.push(block.number.unwrap_or_default().as_u64());
 
     // let anvil = Anvil::new().fork(rpc_node_url).spawn();
-    let wallet = std::env::var("PRIVATE_KEY")?
-        .parse::<LocalWallet>()?
-        .with_chain_id(Chain::AnvilHardhat);
+    // let wallet = std::env::var("PRIVATE_KEY")?
+    //     .parse::<LocalWallet>()?
+    //     .with_chain_id(Chain::AnvilHardhat);
 
-    // anvil
-    // let provider = Provider::<Http>::try_from("http://localhost:8545")?;
-    let provider = Provider::<Http>::try_from(rpc_node_url)?;
+    // // anvil
+    // // let provider = Provider::<Http>::try_from("http://localhost:8545")?;
+    // let provider = Provider::<Http>::try_from(rpc_node_url)?;
 
-    // 4. instantiate the client with the wallet
-    let client = Arc::new(SignerMiddleware::new(
-        provider,
-        wallet.with_chain_id(137_u64),
-    ));
+    // // 4. instantiate the client with the wallet
+    // let client = Arc::new(SignerMiddleware::new(
+    //     provider,
+    //     wallet.with_chain_id(137_u64),
+    // ));
 
-    let liquidations_contract = Liquidations::new(
-        "0x5D03B3678c120F3EcC04eb96dAAb6e15B012022e".parse::<Address>()?,
-        client,
-    );
+    // let liquidations_contract = Liquidations::new(
+    //     "0x5D03B3678c120F3EcC04eb96dAAb6e15B012022e".parse::<Address>()?,
+    //     client,
+    // );
 
-    let args = parse_args(&base_contract, input);
-    let mut args = args.into_iter();
+    // let args = parse_args(&base_contract, input);
+    // let mut args = args.into_iter();
 
-    println!("Size: {}", args.len());
+    // println!("Size: {}", args.len());
 
-    let collateral = args.next().unwrap().into_address().unwrap();
-    let debt = args.next().unwrap().into_address().unwrap();
-    let user = args.next().unwrap().into_address().unwrap();
-    let debtToCover = args.next().unwrap().into_uint().unwrap();
+    // let collateral = args.next().unwrap().into_address().unwrap();
+    // let debt = args.next().unwrap().into_address().unwrap();
+    // let user = args.next().unwrap().into_address().unwrap();
+    // let debtToCover = args.next().unwrap().into_uint().unwrap();
 
-    let dodoPool = get_dodo_pool(debt).unwrap();
-    let uniswap_router = QUICKSWAP.parse::<Address>().unwrap();
+    // let dodoPool = get_dodo_pool(debt).unwrap();
+    // let uniswap_router = QUICKSWAP.parse::<Address>().unwrap();
 
-    let contract_call = liquidations_contract.liquidation(
-        dodoPool,
-        uniswap_router,
-        collateral,
-        debt,
-        user,
-        debtToCover,
-    );
+    // let contract_call = liquidations_contract.liquidation(
+    //     dodoPool,
+    //     uniswap_router,
+    //     collateral,
+    //     debt,
+    //     user,
+    //     debtToCover,
+    // );
 
-    println!("oof");
+    // println!("oof");
 
-    let now = Instant::now();
-    let estimated_gas = contract_call.estimate_gas().await?;
-    println!(
-        "Estimated gas: {}, time taken: {}",
-        estimated_gas,
-        now.elapsed().as_millis(),
-    );
+    // let now = Instant::now();
+    // let estimated_gas = contract_call.estimate_gas().await?;
+    // println!(
+    //     "Estimated gas: {}, time taken: {}",
+    //     estimated_gas,
+    //     now.elapsed().as_millis(),
+    // );
 
     // print_type_of(&receipt);
     // .send()
