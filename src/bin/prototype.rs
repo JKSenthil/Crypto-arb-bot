@@ -189,7 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tx = provider_ws
         .get_transaction(
-            "0xce415a2444c10081b6c80766195023afdf892e4c86cec96f00c7f8e6d8444ed6".parse::<H256>()?,
+            "0x28e374c986aaf59b724cd78ada53ba899b121e6b70e9c2d4b531957e56b5e082".parse::<H256>()?,
         )
         .await?
         .unwrap();

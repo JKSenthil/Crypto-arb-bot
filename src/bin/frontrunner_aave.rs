@@ -57,7 +57,7 @@ impl DebugTraceCallOptions {
         DebugTraceCallOptions {
             from: Some(format!("{:?}", txn.from)),
             to: format!("{:?}", txn.to.unwrap()),
-            gas_price: None,
+            gas_price: txn.gas_price,
             value: Some(txn.value),
             data: Some(txn.input.to_string()),
         }
@@ -193,6 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "0x88E2840bA66c7B618f37AEE2DD9c448997D41690",
         "0x774b407f518C91ae79250625291AA14440D5d8fB",
         "0x98648D396a35D1FF9ED354432B2C98C37931F69C",
+        "0x3BB7a0f2fe88ABA35408C64F588345481490Fe93",
     ]
     .map(|x| x.to_string())
     .to_vec();
