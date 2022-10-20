@@ -38,9 +38,9 @@ pub struct DebugTraceCallOptions {
     #[serde(default)]
     pub to: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas_price: Option<String>,
+    pub gas_price: Option<U256>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<String>,
+    pub value: Option<U256>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<String>,
 }
@@ -58,7 +58,7 @@ impl DebugTraceCallOptions {
             from: Some(format!("{:?}", txn.from)),
             to: format!("{:?}", txn.to.unwrap()),
             gas_price: None,
-            value: None,
+            value: Some(txn.value),
             data: Some(txn.input.to_string()),
         }
     }

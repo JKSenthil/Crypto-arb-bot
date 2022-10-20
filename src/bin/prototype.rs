@@ -10,11 +10,13 @@ use dotenv::dotenv;
 use ethers::{
     abi::{parse_abi, Token},
     prelude::{abigen, builders::ContractCall, BaseContract, SignerMiddleware},
-    providers::{Http, JsonRpcClientWrapper, Middleware, Provider, SubscriptionStream, Ws},
+    providers::{
+        Http, JsonRpcClientWrapper, Middleware, Provider, ProviderError, SubscriptionStream, Ws,
+    },
     signers::{LocalWallet, Signer},
     types::{
-        Address, Bytes, Chain, GethDebugTracingOptions, TraceType, Transaction, TransactionReceipt,
-        H256, U256,
+        Address, Bytes, Chain, GethDebugTracingOptions, GethTrace, TraceType, Transaction,
+        TransactionReceipt, H256, U256,
     },
     utils::{self, Anvil},
 };
@@ -22,9 +24,92 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, value::RawValue};
 
-const QUICKSWAP: &str = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff";
-
 abigen!(Liquidations, "abis/Liquidations.json");
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingTransactionOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hashes_only: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugTraceCallOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gas_price: Option<U256>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<U256>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugTraceCallTracer {
+    #[serde(default)]
+    pub tracer: String,
+}
+
+impl DebugTraceCallOptions {
+    pub fn generate(txn: Transaction) -> Self {
+        DebugTraceCallOptions {
+            from: Some(format!("{:?}", txn.from)),
+            to: format!("{:?}", txn.to.unwrap()),
+            gas_price: txn.gas_price,
+            value: Some(txn.value),
+            data: Some(txn.input.to_string()),
+        }
+    }
+}
+
+impl DebugTraceCallTracer {
+    pub fn new() -> Self {
+        DebugTraceCallTracer {
+            tracer: "callTracer".to_string(),
+        }
+    }
+}
+
+async fn get_args(
+    provider: &Provider<Http>,
+    txn: Transaction,
+    encoded_function_preface: &str,
+) -> Option<String> {
+    let a = DebugTraceCallOptions::generate(txn);
+    let a = utils::serialize(&a);
+    let b = "latest";
+    let b = utils::serialize(&b);
+    let c = DebugTraceCallTracer::new();
+    let c = utils::serialize(&c);
+
+    let res: ProviderError = provider
+        .request::<_, GethTrace>("debug_traceCall", [a, b, c])
+        .await
+        .unwrap_err();
+    let response = res.to_string();
+    match response.find(encoded_function_preface) {
+        Some(index) => {
+            let str = &response[index..index + 330];
+            Some(str.to_string())
+        }
+        None => None,
+    }
+}
+
+fn parse_args(contract: &BaseContract, input: &str) -> Vec<Token> {
+    let bytes = Bytes::from_str(input).unwrap();
+    let args = contract.decode_raw("liquidationCall", bytes).unwrap();
+    return args;
+}
 
 const WETH: &str = "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619";
 const USDT: &str = "0xc2132d05d31c914a87c6611c10748aeb04b58e8f";
@@ -32,6 +117,9 @@ const DAI: &str = "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063";
 const WBTC: &str = "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6";
 const WMATIC: &str = "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270";
 const USDC: &str = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174";
+
+const QUICKSWAP: &str = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff";
+
 fn get_dodo_pool(token_address: Address) -> Option<Address> {
     match format!("{:?}", token_address).as_str() {
         WETH => Some(
@@ -68,23 +156,6 @@ fn get_dodo_pool(token_address: Address) -> Option<Address> {
     }
 }
 
-fn parse_args(contract: &BaseContract, input: &str) -> Vec<Token> {
-    let bytes = Bytes::from_str(input).unwrap();
-    let args = contract.decode_raw("liquidationCall", bytes).unwrap();
-    return args;
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingTransactionOptions {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from_address: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to_address: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hashes_only: Option<bool>,
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -114,6 +185,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ws = Arc::new(provider);
 
     let provider = Provider::<Http>::try_from(std::env::var("ALCHEMY_POLYGON_RPC_URL")?)?;
+    let provider = Arc::new(provider);
+
+    let tx = provider_ws
+        .get_transaction(
+            "0xce415a2444c10081b6c80766195023afdf892e4c86cec96f00c7f8e6d8444ed6".parse::<H256>()?,
+        )
+        .await?
+        .unwrap();
+
+    // let res = provider.trace_transaction(hash)
+    //     .debug_trace_transaction(
+    //         "0x07b90152063e9dc9298c428baa5eb1a0d349e47ade56a289f5b09b5c45cea261".parse::<H256>()?,
+    //         GethDebugTracingOptions {
+    //             disable_storage: Some(true),
+    //             disable_stack: None,
+    //             enable_memory: None,
+    //             enable_return_data: Some(false),
+    //             tracer: Some("callTracer".to_string()),
+    //             timeout: Some("5s".to_string()),
+    //         },
+    //     )
+    //     .await
+    //     .unwrap_err();
+
+    let res = provider
+        .trace_transaction(
+            "0x07b90152063e9dc9298c428baa5eb1a0d349e47ade56a289f5b09b5c45cea261".parse::<H256>()?,
+        )
+        .await
+        .unwrap_err();
+
+    println!("{}", res.to_string());
+    exit(0);
+
+    // let encoded_prefix = "0x00a718a9";
+
+    // let args = get_args(&provider, tx, encoded_prefix).await;
+    // println!("{:?}", args);
 
     // let encoded_prefix = "0x00a718a9";
     // let a = get_args(
@@ -129,29 +238,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // println!("a: {}", a);
     // exit(0);
 
-    let method = utils::serialize(&"alchemy_pendingTransactions");
-    let v = vec!["0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()];
-    let method_params = utils::serialize(&PendingTransactionOptions {
-        to_address: Some(v),
-        from_address: None,
-        hashes_only: None,
-    });
+    // let method = utils::serialize(&"alchemy_pendingTransactions");
+    // let v = vec!["0x794a61358D6845594F94dc1DB02A252b5b4814aD".to_string()];
+    // let method_params = utils::serialize(&PendingTransactionOptions {
+    //     to_address: Some(v),
+    //     from_address: None,
+    //     hashes_only: None,
+    // });
 
-    // let sub_id = provider_ws.trace_replay_transaction(hash, trace_type)
-    println!("2");
-    // let output = provider_ws
-    //     .request::<_, String>("eth_subscribe", [method, method_params])
-    //     .await
-    //     .unwrap();
-    // println!("sub_id: {}", output);
-    let mut stream: SubscriptionStream<Ws, Box<RawValue>> =
-        provider_ws.subscribe([method, method_params]).await?;
-    println!("4");
+    // // let sub_id = provider_ws.trace_replay_transaction(hash, trace_type)
+    // println!("2");
+    // // let output = provider_ws
+    // //     .request::<_, String>("eth_subscribe", [method, method_params])
+    // //     .await
+    // //     .unwrap();
+    // // println!("sub_id: {}", output);
+    // let mut stream: SubscriptionStream<Ws, Box<RawValue>> =
+    //     provider_ws.subscribe([method, method_params]).await?;
+    // println!("4");
 
-    while let item = stream.next().await.unwrap() {
-        let tx: Transaction = serde_json::from_str(item.get()).unwrap();
-        println!("Transaction received: {:?}", tx.hash);
-    }
+    // while let item = stream.next().await.unwrap() {
+    //     let tx: Transaction = serde_json::from_str(item.get()).unwrap();
+    //     println!("Transaction received: {:?}", tx.hash);
+    // }
 
     // // Subscribing requires sending the sub request and then subscribing to
     // // the returned sub_id
