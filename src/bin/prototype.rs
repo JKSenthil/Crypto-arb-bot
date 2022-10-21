@@ -64,7 +64,7 @@ impl DebugTraceCallOptions {
         DebugTraceCallOptions {
             from: Some(format!("{:?}", txn.from)),
             to: format!("{:?}", txn.to.unwrap()),
-            gas_price: txn.gas_price,
+            gas_price: Some(U256::from_str("549999999").unwrap()),
             value: Some(txn.value),
             data: Some(txn.input.to_string()),
         }
@@ -159,6 +159,12 @@ fn get_dodo_pool(token_address: Address) -> Option<Address> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
+
+    println!("{:#x}", 10);
+    exit(0);
+
+    // let val = U256::from_str("8412333").unwrap();
+    // let b = Bytes::from_str(s)
 
     // TODO try parsing the error and see if it works in prod
     // let liquidation_call_args = get_args(&provider, txn, encoded_prefix).await.unwrap();

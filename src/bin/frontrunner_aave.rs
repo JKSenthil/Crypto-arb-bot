@@ -1,3 +1,4 @@
+use std::ops::Mul;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -5,7 +6,7 @@ use dotenv::dotenv;
 use ethers::prelude::{abigen, SignerMiddleware};
 use ethers::providers::{Http, ProviderError, SubscriptionStream};
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{GethTrace, Transaction, U256};
+use ethers::types::{GethTrace, Transaction, U256, U64};
 use ethers::utils;
 use ethers::{
     abi::{parse_abi, Token},
@@ -38,9 +39,9 @@ pub struct DebugTraceCallOptions {
     #[serde(default)]
     pub to: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas_price: Option<U256>,
+    pub gas_price: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<U256>,
+    pub value: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<String>,
 }
@@ -54,11 +55,16 @@ pub struct DebugTraceCallTracer {
 
 impl DebugTraceCallOptions {
     pub fn generate(txn: Transaction) -> Self {
+        // let gas_price = match txn.gas_price {
+        //     //Some(gp) => Some(format!("{:#x}", gp.as_u128())),
+        //     Some(_) => Some("0x7a120".to_string()),
+        //     None => None,
+        // };
         DebugTraceCallOptions {
             from: Some(format!("{:?}", txn.from)),
             to: format!("{:?}", txn.to.unwrap()),
-            gas_price: txn.gas_price,
-            value: Some(txn.value),
+            gas_price: None,
+            value: Some(format!("{:#x}", txn.value.as_u128())),
             data: Some(txn.input.to_string()),
         }
     }
@@ -79,7 +85,7 @@ async fn get_args(
 ) -> Option<String> {
     let a = DebugTraceCallOptions::generate(txn);
     let a = utils::serialize(&a);
-    let b = "latest";
+    let b = "pending";
     let b = utils::serialize(&b);
     let c = DebugTraceCallTracer::new();
     let c = utils::serialize(&c);
@@ -214,17 +220,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 format!("{:?}", txn.hash)
             );
 
-            let max_priority_fee_per_gas = txn.max_priority_fee_per_gas;
-            let max_gas_fee = txn.max_fee_per_gas;
-            let gas_fee: U256;
-            if max_priority_fee_per_gas == None && max_gas_fee == None {
-                println!("  No gas estimate found");
+            let gas_fee: Option<U256> = match txn.transaction_type {
+                Some(id) if id == U64::from(2) => {
+                    let max_priority_fee_per_gas = txn.max_priority_fee_per_gas;
+                    let max_gas_fee = txn.max_fee_per_gas;
+                    if max_priority_fee_per_gas == None && max_gas_fee == None {
+                        None
+                    } else if let Some(f) = max_priority_fee_per_gas {
+                        Some(f)
+                    } else {
+                        Some(max_gas_fee.unwrap())
+                    }
+                }
+                None => {
+                    // if let Some(gas_price) = txn.gas_price {
+                    //     // todo complete
+                    //     return Some(gas_price);
+                    // }
+                    // return None;
+                    let val = provider.get_gas_price().await.unwrap();
+                    Some(val.mul(2))
+                }
+                _ => None,
+            };
+
+            if gas_fee == None {
+                println!("  Could not estimate gas...");
                 continue;
-            } else if let Some(f) = max_priority_fee_per_gas {
-                gas_fee = f;
-            } else {
-                gas_fee = max_gas_fee.unwrap();
             }
+            let gas_fee = gas_fee.unwrap();
 
             if let Some(liquidation_call_args) = get_args(&provider, txn, encoded_prefix).await {
                 let args = parse_args(&contract, liquidation_call_args.as_str());
@@ -239,9 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(dodo_pool) = dodo_pool {
                     let uniswap_router = QUICKSWAP.parse::<Address>().unwrap();
 
-                    // TODO pass args into smart contract and win $$$
-                    // and don't forget to bid additional gas so that
-                    // your txn is picked up before your opponents!
+                    // pass args into smart contract and win $$$
                     match liquidations_contract
                         .liquidation(
                             dodo_pool,
