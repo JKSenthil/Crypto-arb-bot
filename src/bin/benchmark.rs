@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let provider = Provider::<Http>::try_from(rpc_node_url)?;
     let tx_hash =
-        "0xf6f39213771aaa9bc399805929121643f35f13e2c76bce41154334b26b7eb609".parse::<H256>()?;
+        "0x9430e6c7d66e0ae34b47913a87c5ab4b6b4bdb358c20f94015cab2ce696e8b16".parse::<H256>()?;
     let now = Instant::now();
     let res = provider
         .debug_trace_transaction(

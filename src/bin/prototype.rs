@@ -1,5 +1,6 @@
 use std::{
     convert::TryFrom,
+    ops::Mul,
     process::exit,
     str::FromStr,
     sync::Arc,
@@ -45,9 +46,9 @@ pub struct DebugTraceCallOptions {
     #[serde(default)]
     pub to: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas_price: Option<U256>,
+    pub gas_price: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<U256>,
+    pub value: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data: Option<String>,
 }
@@ -61,11 +62,16 @@ pub struct DebugTraceCallTracer {
 
 impl DebugTraceCallOptions {
     pub fn generate(txn: Transaction) -> Self {
+        // let gas_price = match txn.gas_price {
+        //     //Some(gp) => Some(format!("{:#x}", gp.as_u128())),
+        //     Some(_) => Some("0x7a120".to_string()),
+        //     None => None,
+        // };
         DebugTraceCallOptions {
             from: Some(format!("{:?}", txn.from)),
             to: format!("{:?}", txn.to.unwrap()),
-            gas_price: Some(U256::from_str("549999999").unwrap()),
-            value: Some(txn.value),
+            gas_price: None,
+            value: Some(format!("{:#x}", txn.value.as_u128())),
             data: Some(txn.input.to_string()),
         }
     }
@@ -86,7 +92,7 @@ async fn get_args(
 ) -> Option<String> {
     let a = DebugTraceCallOptions::generate(txn);
     let a = utils::serialize(&a);
-    let b = "latest";
+    let b = "pending";
     let b = utils::serialize(&b);
     let c = DebugTraceCallTracer::new();
     let c = utils::serialize(&c);
@@ -160,9 +166,6 @@ fn get_dodo_pool(token_address: Address) -> Option<Address> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
 
-    println!("{:#x}", 10);
-    exit(0);
-
     // let val = U256::from_str("8412333").unwrap();
     // let b = Bytes::from_str(s)
 
@@ -193,12 +196,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider = Provider::<Http>::try_from(std::env::var("ALCHEMY_POLYGON_RPC_URL")?)?;
     let provider = Arc::new(provider);
 
-    let tx = provider_ws
+    let tx = provider
         .get_transaction(
-            "0x28e374c986aaf59b724cd78ada53ba899b121e6b70e9c2d4b531957e56b5e082".parse::<H256>()?,
+            "0x9430e6c7d66e0ae34b47913a87c5ab4b6b4bdb358c20f94015cab2ce696e8b16".parse::<H256>()?,
         )
         .await?
         .unwrap();
+
+    //println!("{:?}", tx);
+    //println!()
+    println!("{}", provider.get_gas_price().await?);
+    println!("{}", provider.get_gas_price().await?.mul(2));
 
     // let res = provider.trace_transaction(hash)
     //     .debug_trace_transaction(
@@ -215,14 +223,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     .await
     //     .unwrap_err();
 
-    let res = provider
-        .trace_transaction(
-            "0x07b90152063e9dc9298c428baa5eb1a0d349e47ade56a289f5b09b5c45cea261".parse::<H256>()?,
-        )
-        .await
-        .unwrap_err();
+    // let res = provider
+    //     .trace_transaction(
+    //         "0x07b90152063e9dc9298c428baa5eb1a0d349e47ade56a289f5b09b5c45cea261".parse::<H256>()?,
+    //     )
+    //     .await
+    //     .unwrap_err();
 
-    println!("{}", res.to_string());
+    // println!("{}", res.to_string());
     exit(0);
 
     // let encoded_prefix = "0x00a718a9";

@@ -225,23 +225,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let max_priority_fee_per_gas = txn.max_priority_fee_per_gas;
                     let max_gas_fee = txn.max_fee_per_gas;
                     if max_priority_fee_per_gas == None && max_gas_fee == None {
-                        None
+                        println!("  Needed to compute gas price on own");
+                        Some(provider.get_gas_price().await.unwrap())
                     } else if let Some(f) = max_priority_fee_per_gas {
                         Some(f)
                     } else {
                         Some(max_gas_fee.unwrap())
                     }
                 }
-                None => {
+                _ => {
                     // if let Some(gas_price) = txn.gas_price {
                     //     // todo complete
                     //     return Some(gas_price);
                     // }
                     // return None;
                     let val = provider.get_gas_price().await.unwrap();
-                    Some(val.mul(2))
+                    Some(val)
                 }
-                _ => None,
             };
 
             if gas_fee == None {
