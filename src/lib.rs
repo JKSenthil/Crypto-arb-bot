@@ -1,4 +1,4 @@
 pub mod aave;
-pub mod consts;
+pub mod constants;
 pub mod price;
 pub mod utils;

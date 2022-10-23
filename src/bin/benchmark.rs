@@ -6,7 +6,7 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use cryptorocket::price::Price;
-use cryptorocket::{consts::*, utils::convert_to_U256};
+use cryptorocket::{constants::*, utils::convert_to_U256};
 use dotenv::dotenv;
 use ethers::abi::{parse_abi, ParamType};
 use ethers::abi::{AbiDecode, Function, Param, StateMutability};
