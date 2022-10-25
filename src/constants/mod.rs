@@ -1,7 +1,2 @@
-mod protocol;
-pub use protocol::Protocol;
-
+pub mod protocol;
 pub mod token;
-
-mod routes;
-pub use routes::{Route, ROUTES};
