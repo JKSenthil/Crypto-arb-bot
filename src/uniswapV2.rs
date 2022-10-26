@@ -4,9 +4,11 @@ use std::{
 };
 
 use ethers::{
+    abi::Token::{self, *},
     contract::Contract,
+    core::abi::Abi,
     prelude::{abigen, Multicall},
-    providers::{Http, Middleware, Provider, Ws},
+    providers::{Http, Middleware, Provider},
     types::{Address, U256},
 };
 
@@ -109,29 +111,70 @@ impl<M: Middleware> UniswapV2Client<M> {
 
     pub async fn get_pair_address_multicall(
         &self,
+        http_provider: Provider<Http>,
         pairs_list: Vec<(UniswapV2, ERC20Token, ERC20Token)>,
-    ) {
-        // use makerdao's multicall contract
-        let mut multicall = Multicall::new(
-            &self.provider,
-            Some(
-                "0x11ce4B23bD875D7F5C6a31084f55fDe1e9A87507"
-                    .parse::<Address>()
-                    .unwrap(),
-            ),
-        );
+    ) -> Vec<Address> {
+        let provider = Arc::new(http_provider);
+
+        let mut multicall = Multicall::new(Arc::clone(&provider), None).await.unwrap();
 
         for pair in pairs_list {
             let (protocol, token0, token1) = pair;
-            let factory = &self.factory_mapping[protocol as usize];
+            let uniswapV2_pair_abi: Abi = serde_json::from_str(
+                r#"[{
+                "constant": true,
+                "inputs": [
+                    {
+                        "internalType": "address",
+                        "name": "tokenA",
+                        "type": "address"
+                    },
+                    {
+                        "internalType": "address",
+                        "name": "tokenB",
+                        "type": "address"
+                    }
+                ],
+                "name": "getPair",
+                "outputs": [
+                    {
+                        "internalType": "address",
+                        "name": "pair",
+                        "type": "address"
+                    }
+                ],
+                "payable": false,
+                "stateMutability": "view",
+                "type": "function"
+            }]"#,
+            )
+            .unwrap();
 
-            let abi = IUNISWAPV2FACTORY_ABI;
-            let contract =
-                Contract::<Provider<Http>>::new(protocol.get_factory_address(), abi, self.provider);
+            let contract = Contract::<Provider<Http>>::new(
+                protocol.get_factory_address(),
+                uniswapV2_pair_abi,
+                Arc::clone(&provider),
+            );
 
-            let call = factory.get_pair(token0.get_address(), token1.get_address());
-            multicall = multicall.add_call(call);
+            let call = contract
+                .method::<_, Address>("getPair", (token0.get_address(), token1.get_address()))
+                .unwrap();
+
+            multicall.add_call(call, false);
         }
+
+        let return_data: Vec<Token> = multicall.call_raw().await.unwrap();
+        let mut data: Vec<Address> = Vec::new();
+        for token in return_data {
+            let token = token.into_tuple().unwrap();
+            let token = &token[1];
+            let val = match token {
+                Address(a) => *a,
+                _ => "0x0".parse::<Address>().unwrap(),
+            };
+            data.push(val);
+        }
+        return data;
     }
 
     pub async fn get_pair_reserves(&self, pair_address: Address) -> (u128, u128) {
@@ -139,6 +182,79 @@ impl<M: Middleware> UniswapV2Client<M> {
         let (reserve0, reserve1, _): (u128, u128, u32) =
             pair_contract.get_reserves().call().await.unwrap();
         return (reserve0, reserve1);
+    }
+
+    pub async fn get_pair_reserves_multicall(
+        &self,
+        http_provider: Provider<Http>,
+        pair_addresses: Vec<Address>,
+    ) -> Vec<(U256, U256)> {
+        let provider = Arc::new(http_provider);
+
+        let mut multicall = Multicall::new(Arc::clone(&provider), None).await.unwrap();
+
+        for pair_address in pair_addresses {
+            let uniswapV2_pair_abi: Abi = serde_json::from_str(
+                r#"[{
+                    "constant": true,
+                    "inputs": [],
+                    "name": "getReserves",
+                    "outputs": [
+                        {
+                            "internalType": "uint112",
+                            "name": "reserve0",
+                            "type": "uint112"
+                        },
+                        {
+                            "internalType": "uint112",
+                            "name": "reserve1",
+                            "type": "uint112"
+                        },
+                        {
+                            "internalType": "uint32",
+                            "name": "blockTimestampLast",
+                            "type": "uint32"
+                        }
+                    ],
+                    "payable": false,
+                    "stateMutability": "view",
+                    "type": "function"
+                }]"#,
+            )
+            .unwrap();
+
+            let contract = Contract::<Provider<Http>>::new(
+                pair_address,
+                uniswapV2_pair_abi,
+                Arc::clone(&provider),
+            );
+
+            let call = contract
+                .method::<_, (u128, u128)>("getReserves", ())
+                .unwrap();
+
+            multicall.add_call(call, false);
+        }
+
+        let return_data: Vec<Token> = multicall.call_raw().await.unwrap();
+        let mut data: Vec<(U256, U256)> = Vec::new();
+        for token in return_data {
+            let token = token.into_tuple().unwrap();
+            let token = match &token[1] {
+                Tuple(tuple) => tuple,
+                _ => todo!(),
+            };
+            let val1 = match token[0] {
+                Uint(a) => a,
+                _ => U256::zero(),
+            };
+            let val2 = match token[1] {
+                Uint(a) => a,
+                _ => U256::zero(),
+            };
+            data.push((val1, val2));
+        }
+        return data;
     }
 }
 
@@ -151,11 +267,11 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use ethers::providers::{Provider, Ws};
+    use ethers::providers::{Http, Provider, Ws};
     use ethers::types::Address;
 
     use crate::constants::protocol::UniswapV2::SUSHISWAP;
-    use crate::constants::token::ERC20Token::{USDC, WETH};
+    use crate::constants::token::ERC20Token::{USDC, USDT, WETH};
 
     use super::UniswapV2Client;
 
@@ -192,5 +308,50 @@ mod tests {
 
         // TODO - assert_eq! to something here (or add any general check)
         uniswapV2_client.get_pair_reserves(pair_address).await;
+    }
+
+    #[tokio::test]
+    async fn test_get_pair_address_multicall() {
+        dotenv::dotenv().ok();
+        let rpc_node_url = std::env::var("ALCHEMY_POLYGON_RPC_URL").unwrap();
+        let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL").unwrap();
+
+        let provider = Provider::<Http>::try_from(&rpc_node_url).unwrap();
+        let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await.unwrap();
+        let provider_ws = Arc::new(provider_ws);
+
+        let uniswapV2_client = UniswapV2Client::new(provider_ws);
+
+        let pairs_list = vec![(SUSHISWAP, USDC, USDT), (SUSHISWAP, USDC, WETH)];
+
+        let results = uniswapV2_client
+            .get_pair_address_multicall(provider, pairs_list)
+            .await;
+        println!("{:?}", results);
+    }
+
+    #[tokio::test]
+    async fn test_get_pair_reserves_multicall() {
+        dotenv::dotenv().ok();
+        let rpc_node_url = std::env::var("ALCHEMY_POLYGON_RPC_URL").unwrap();
+        let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL").unwrap();
+
+        let provider = Provider::<Http>::try_from(&rpc_node_url).unwrap();
+        let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await.unwrap();
+        let provider_ws = Arc::new(provider_ws);
+
+        let uniswapV2_client = UniswapV2Client::new(provider_ws);
+        let pair_addresses = vec![
+            "0x34965ba0ac2451a34a0471f04cca3f990b8dea27"
+                .parse::<Address>()
+                .unwrap(),
+            "0x34965ba0ac2451a34a0471f04cca3f990b8dea27"
+                .parse::<Address>()
+                .unwrap(),
+        ];
+        let result = uniswapV2_client
+            .get_pair_reserves_multicall(provider, pair_addresses)
+            .await;
+        println!("{:?}", result);
     }
 }
