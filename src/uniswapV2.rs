@@ -18,9 +18,9 @@ abigen!(IUniswapV2Router02, "abis/IUniswapV2Router02.json");
 abigen!(IUniswapV2Factory, "abis/IUniswapV2Factory.json");
 abigen!(IUniswapV2Pair, "abis/IUniswapV2Pair.json");
 
+#[derive(Debug, Clone, Copy)]
 pub struct UniswapV2Pair {
     protocol: UniswapV2,
-    address: Address,
     token0: ERC20Token,
     token1: ERC20Token,
     reserve0: U256,
@@ -28,6 +28,27 @@ pub struct UniswapV2Pair {
 }
 
 impl UniswapV2Pair {
+    pub fn default() -> Self {
+        Self {
+            protocol: UniswapV2::SUSHISWAP,
+            token0: ERC20Token::USDC,
+            token1: ERC20Token::USDC,
+            reserve0: U256::zero(),
+            reserve1: U256::zero(),
+        }
+    }
+
+    pub fn update_metadata(&mut self, protocol: UniswapV2, token0: ERC20Token, token1: ERC20Token) {
+        self.protocol = protocol;
+        self.token0 = token0;
+        self.token1 = token1;
+    }
+
+    pub fn update_reserves(&mut self, reserve0: U256, reserve1: U256) {
+        self.reserve0 = reserve0;
+        self.reserve1 = reserve1;
+    }
+
     // TODO - verify all dexes have same get_amount_out implementation!
     fn get_amount_out(amount_in: U256, reserve_in: U256, reserve_out: U256) -> U256 {
         let amount_in_with_fee: U256 = amount_in.mul(997);
@@ -187,7 +208,7 @@ impl<M: Middleware> UniswapV2Client<M> {
     pub async fn get_pair_reserves_multicall(
         &self,
         http_provider: Provider<Http>,
-        pair_addresses: Vec<Address>,
+        pair_addresses: &Vec<Address>,
     ) -> Vec<(U256, U256)> {
         let provider = Arc::new(http_provider);
 
@@ -224,7 +245,7 @@ impl<M: Middleware> UniswapV2Client<M> {
             .unwrap();
 
             let contract = Contract::<Provider<Http>>::new(
-                pair_address,
+                *pair_address,
                 uniswapV2_pair_abi,
                 Arc::clone(&provider),
             );
@@ -350,7 +371,7 @@ mod tests {
                 .unwrap(),
         ];
         let result = uniswapV2_client
-            .get_pair_reserves_multicall(provider, pair_addresses)
+            .get_pair_reserves_multicall(provider, &pair_addresses)
             .await;
         println!("{:?}", result);
     }

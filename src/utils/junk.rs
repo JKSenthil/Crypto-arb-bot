@@ -106,3 +106,19 @@ impl DebugTxClient {
 //         }
 //     ];
 // }
+
+// #[derive(Serialize, Deserialize, Debug)]
+// pub struct ERC20Token {
+//     pub address: Address,
+//     pub name: String,
+//     pub symbol: String,
+//     pub decimals: u8,
+// }
+
+// let token_list_data = fs::read_to_string("data/polygon_tokens.json")?;
+// let token_list: Vec<ERC20Token> = serde_json::from_str(&token_list_data)?;
+
+// println!("Num tokens: {}", token_list.len());
+// println!("{:?}", token_list[1]);
+
+// println!("{:?}", USDC);

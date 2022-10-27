@@ -2,7 +2,7 @@ use enum_map::{enum_map, Enum, EnumMap};
 use ethers::types::Address;
 use lazy_static::lazy_static;
 
-#[derive(Debug, Enum)]
+#[derive(Debug, Enum, Clone, Copy)]
 pub enum ERC20Token {
     USDC,
     USDT,
