@@ -23,7 +23,7 @@ pub struct UniswapV2Pair {
     protocol: UniswapV2,
     token0: ERC20Token,
     token1: ERC20Token,
-    reserve0: U256,
+    pub reserve0: U256,
     reserve1: U256,
 }
 
