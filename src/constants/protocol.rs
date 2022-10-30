@@ -6,12 +6,17 @@ use lazy_static::lazy_static;
 pub enum UniswapV2 {
     SUSHISWAP,
     QUICKSWAP,
-    // JETSWAP, # TODO investigate why pair contract has no getReserves function
     POLYCAT,
     APESWAP,
 }
 
 struct UniswapV2Data {
+    pub name: &'static str,
+    pub router_address: Address,
+    pub factory_address: Address,
+}
+
+pub struct UniswapV3Data {
     pub name: &'static str,
     pub router_address: Address,
     pub factory_address: Address,
@@ -33,13 +38,6 @@ lazy_static! {
                 .unwrap(),
             factory_address: "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32".parse::<Address>().unwrap()
         },
-        // UniswapV2::JETSWAP => UniswapV2Data {
-        //     name: "Jetswap",
-        //     router_address: "0x5C6EC38fb0e2609672BDf628B1fD605A523E5923"
-        //     .parse::<Address>()
-        //     .unwrap(),
-        //     factory_address: "0x668ad0ed2622C62E24f0d5ab6B6Ac1b9D2cD4AC7".parse::<Address>().unwrap(),
-        // },
         UniswapV2::POLYCAT => UniswapV2Data {
             name: "Polycat",
             router_address: "0x94930a328162957FF1dd48900aF67B5439336cBD"
@@ -54,6 +52,15 @@ lazy_static! {
                 .unwrap(),
             factory_address: "0xCf083Be4164828f00cAE704EC15a36D711491284".parse::<Address>().unwrap(),
         }
+    };
+    pub static ref UNISWAP_V3: UniswapV3Data = UniswapV3Data {
+        name: "UniswapV3",
+        router_address: "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+            .parse::<Address>()
+            .unwrap(),
+        factory_address: "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+            .parse::<Address>()
+            .unwrap()
     };
 }
 
@@ -75,7 +82,6 @@ impl UniswapV2 {
         vec![
             UniswapV2::SUSHISWAP,
             UniswapV2::QUICKSWAP,
-            // UniswapV2::JETSWAP,
             UniswapV2::POLYCAT,
             UniswapV2::APESWAP,
         ]

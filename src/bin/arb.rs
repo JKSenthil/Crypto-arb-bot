@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protocols_list = UniswapV2::get_all_protoccols();
 
     // grab all pair addresses
-    tokens_list.sort_by(|x, y| x.get_symbol().cmp(y.get_symbol())); // sort by name as that is order stored on blockchain
+    tokens_list.sort_by(|x, y| x.get_address().cmp(&y.get_address())); // sort by name as that is order stored on blockchain
 
     let uniswapV2_client = UniswapV2Client::new(provider_ws.clone()); // initialize interfacer w/ blockchain
 
@@ -94,8 +94,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         matrix[(protocol as usize, token0 as usize, token1 as usize)]
             .update_reserves(reserve0, reserve1);
         println!(
-            "Transaction Hash: {:?}. Pair reserves updated on {:?} protocol, pair {:?}-{:?}",
+            "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
             log.transaction_hash.unwrap(),
+            log.block_number.unwrap(),
             protocol.get_name(),
             token0.get_symbol(),
             token1.get_symbol()

@@ -14,9 +14,12 @@ use ethers::{
 
 use crate::constants::{protocol::UniswapV2, token::ERC20Token};
 
-abigen!(IUniswapV2Router02, "abis/IUniswapV2Router02.json");
-abigen!(IUniswapV2Factory, "abis/IUniswapV2Factory.json");
-abigen!(IUniswapV2Pair, "abis/IUniswapV2Pair.json");
+abigen!(
+    IUniswapV2Router02,
+    "abis/uniswap/v2/IUniswapV2Router02.json"
+);
+abigen!(IUniswapV2Factory, "abis/uniswap/v2/IUniswapV2Factory.json");
+abigen!(IUniswapV2Pair, "abis/uniswap/v2/IUniswapV2Pair.json");
 
 #[derive(Debug, Clone, Copy)]
 pub struct UniswapV2Pair {
@@ -50,18 +53,29 @@ impl UniswapV2Pair {
     }
 
     // TODO - verify all dexes have same get_amount_out implementation!
-    fn get_amount_out(amount_in: U256, reserve_in: U256, reserve_out: U256) -> U256 {
-        let amount_in_with_fee: U256 = amount_in.mul(997);
-        let numerator: U256 = amount_in_with_fee.mul(reserve_out);
-        let denominator: U256 = reserve_in.mul(1000_u32).add(amount_in_with_fee);
-        return numerator / denominator;
+    fn get_amount_out(self, amount_in: U256, reserve_in: U256, reserve_out: U256) -> U256 {
+        let amount = match self.protocol {
+            UniswapV2::APESWAP => {
+                let amount_in_with_fee: U256 = amount_in.mul(998);
+                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
+                let denominator: U256 = reserve_in.mul(1000_u32).add(amount_in_with_fee);
+                numerator / denominator
+            }
+            _ => {
+                let amount_in_with_fee: U256 = amount_in.mul(997);
+                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
+                let denominator: U256 = reserve_in.mul(1000_u32).add(amount_in_with_fee);
+                numerator / denominator
+            }
+        };
+        amount
     }
 
     pub fn get_amounts_out(&self, amount_in: U256, token0: bool) -> U256 {
         if token0 {
-            return UniswapV2Pair::get_amount_out(amount_in, self.reserve0, self.reserve1);
+            return self.get_amount_out(amount_in, self.reserve0, self.reserve1);
         }
-        return UniswapV2Pair::get_amount_out(amount_in, self.reserve1, self.reserve0);
+        return self.get_amount_out(amount_in, self.reserve1, self.reserve0);
     }
 }
 
@@ -289,12 +303,12 @@ mod tests {
     use std::sync::Arc;
 
     use ethers::providers::{Http, Provider, Ws};
-    use ethers::types::Address;
+    use ethers::types::{Address, U256};
 
-    use crate::constants::protocol::UniswapV2::SUSHISWAP;
-    use crate::constants::token::ERC20Token::{USDC, USDT, WETH};
+    use crate::constants::protocol::UniswapV2::{APESWAP, QUICKSWAP, SUSHISWAP};
+    use crate::constants::token::ERC20Token::{USDC, USDT, WETH, WMATIC};
 
-    use super::UniswapV2Client;
+    use super::{UniswapV2Client, UniswapV2Pair};
 
     #[tokio::test]
     async fn test_get_pair_address() {
@@ -374,5 +388,41 @@ mod tests {
             .get_pair_reserves_multicall(provider, &pair_addresses)
             .await;
         println!("{:?}", result);
+    }
+
+    // TODO why is apeswap numbers wrong :(
+    #[tokio::test]
+    async fn test_get_amount_out() {
+        dotenv::dotenv().ok();
+        let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL").unwrap();
+
+        let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await.unwrap();
+        let provider_ws = Arc::new(provider_ws);
+        let uniswapV2_client = UniswapV2Client::new(provider_ws);
+
+        let route = (APESWAP, WMATIC, USDT);
+
+        // load in pair and save reserve data
+        let amount_in = U256::from(1000) * U256::exp10(route.1.get_decimals().into());
+        println!("AMOUTN INT {:?}", amount_in);
+        let pair_address = uniswapV2_client
+            .get_pair_address(route.0, route.1, route.2)
+            .await;
+        let amount_out = uniswapV2_client
+            .quote(route.0, route.1, route.2, amount_in)
+            .await;
+
+        let (reserve0, reserve1) = uniswapV2_client.get_pair_reserves(pair_address).await;
+        println!("{:?}", pair_address);
+        println!("{}, {}", reserve0, reserve1);
+        let reserve0 = U256::from(reserve0);
+        let reserve1 = U256::from(reserve1);
+        let mut pair = UniswapV2Pair::default();
+        pair.update_reserves(reserve0, reserve1);
+        let i_amount_out = pair.get_amounts_out(amount_in, true);
+        println!(
+            "Uniswap get_amounts_out: {}, internal get_amounts_out: {}",
+            amount_out, i_amount_out
+        );
     }
 }
