@@ -26,10 +26,12 @@ pub struct UniswapV2Pair {
     protocol: UniswapV2,
     token0: ERC20Token,
     token1: ERC20Token,
-    pub reserve0: U256,
+    reserve0: U256,
     reserve1: U256,
+    fee: Option<u32>,
 }
 
+// TODO implement correct MeshSwap implementation?
 impl UniswapV2Pair {
     pub fn default() -> Self {
         Self {
@@ -38,6 +40,7 @@ impl UniswapV2Pair {
             token1: ERC20Token::USDC,
             reserve0: U256::zero(),
             reserve1: U256::zero(),
+            fee: None,
         }
     }
 
@@ -52,9 +55,21 @@ impl UniswapV2Pair {
         self.reserve1 = reserve1;
     }
 
-    // TODO - verify all dexes have same get_amount_out implementation!
+    // TODO clean up repetition code later
     fn get_amount_out(self, amount_in: U256, reserve_in: U256, reserve_out: U256) -> U256 {
         let amount = match self.protocol {
+            UniswapV2::MESHSWAP => {
+                let amount_in_with_fee: U256 = amount_in.mul(9990);
+                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
+                let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
+                numerator / denominator
+            }
+            UniswapV2::POLYCAT => {
+                let amount_in_with_fee: U256 = amount_in.mul(9976);
+                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
+                let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
+                numerator / denominator
+            }
             UniswapV2::APESWAP => {
                 let amount_in_with_fee: U256 = amount_in.mul(998);
                 let numerator: U256 = amount_in_with_fee.mul(reserve_out);
@@ -305,7 +320,7 @@ mod tests {
     use ethers::providers::{Http, Provider, Ws};
     use ethers::types::{Address, U256};
 
-    use crate::constants::protocol::UniswapV2::{APESWAP, QUICKSWAP, SUSHISWAP};
+    use crate::constants::protocol::UniswapV2::*;
     use crate::constants::token::ERC20Token::{USDC, USDT, WETH, WMATIC};
 
     use super::{UniswapV2Client, UniswapV2Pair};
@@ -390,7 +405,6 @@ mod tests {
         println!("{:?}", result);
     }
 
-    // TODO why is apeswap numbers wrong :(
     #[tokio::test]
     async fn test_get_amount_out() {
         dotenv::dotenv().ok();
@@ -400,7 +414,7 @@ mod tests {
         let provider_ws = Arc::new(provider_ws);
         let uniswapV2_client = UniswapV2Client::new(provider_ws);
 
-        let route = (APESWAP, WMATIC, USDT);
+        let route = (MESHSWAP, WMATIC, USDT);
 
         // load in pair and save reserve data
         let amount_in = U256::from(1000) * U256::exp10(route.1.get_decimals().into());
@@ -418,6 +432,7 @@ mod tests {
         let reserve0 = U256::from(reserve0);
         let reserve1 = U256::from(reserve1);
         let mut pair = UniswapV2Pair::default();
+        pair.update_metadata(route.0, route.1, route.2);
         pair.update_reserves(reserve0, reserve1);
         let i_amount_out = pair.get_amounts_out(amount_in, true);
         println!(

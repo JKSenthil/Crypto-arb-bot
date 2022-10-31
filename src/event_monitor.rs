@@ -1,7 +1,6 @@
 use ethers::{
-    prelude::{abigen, EthEvent},
     providers::{Middleware, Provider, SubscriptionStream, Ws},
-    types::{Address, Log, H256, U256},
+    types::{Address, Log, H256},
     utils::{self, keccak256},
 };
 use serde::{Deserialize, Serialize};
@@ -19,13 +18,6 @@ impl EthSubscribeLogArgs {
             topics: topics,
         }
     }
-}
-
-#[derive(Debug, EthEvent)]
-#[ethevent(abi = "Sync(uint112,uint112)")]
-struct PairSyncEvent {
-    reserve0: U256,
-    reserve1: U256,
 }
 
 // https://geth.ethereum.org/docs/rpc/pubsub
