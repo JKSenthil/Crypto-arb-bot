@@ -2,11 +2,11 @@ use dotenv::dotenv;
 use ethers::{
     abi::parse_abi,
     prelude::BaseContract,
-    providers::{Http, Provider, Ws},
+    providers::{Http, Middleware, Provider, Ws},
     types::{Address, U256},
 };
 use futures_util::StreamExt;
-use std::{collections::HashMap, sync::Arc};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 use tsuki::{
     constants::{
@@ -15,8 +15,57 @@ use tsuki::{
     },
     event_monitor::get_pair_sync_stream,
     uniswapV2::{UniswapV2Client, UniswapV2Pair},
+    uniswapV3::UniswapV3Client,
     utils::matrix::Matrix3D,
 };
+
+#[derive(Debug, Clone, Copy)]
+enum Protocol {
+    UniswapV2(UniswapV2),
+    UniswapV3,
+}
+
+struct Route {
+    protocol_path: Vec<Protocol>,
+    token_path: Vec<ERC20Token>,
+}
+
+// TODO: inline?
+fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Token, bool) {
+    match token0.get_address().cmp(&token1.get_address()) {
+        Ordering::Less => (token0, token1, true),
+        _ => (token1, token0, false),
+    }
+}
+
+async fn expected_out<M: Middleware>(
+    uniswapV2_markets: &Matrix3D<UniswapV2Pair>,
+    uniswapV3_client: UniswapV3Client<M>,
+    route: &Route,
+    amount_in: U256,
+) -> U256 {
+    let mut token_in = route.token_path[0];
+    let mut current_amt = amount_in;
+
+    let mut protocol;
+    let mut token_out;
+    for i in 1..route.token_path.len() {
+        protocol = route.protocol_path[i - 1];
+        token_out = route.token_path[i];
+
+        current_amt = match protocol {
+            Protocol::UniswapV2(protocol) => {
+                let (token0, token1, is_same_order) = order_tokens(token_in, token_out);
+                uniswapV2_markets[(protocol as usize, token0 as usize, token1 as usize)]
+                    .get_amounts_out(current_amt, is_same_order)
+            }
+            Protocol::UniswapV3 => U256::zero(),
+        };
+        token_in = token_out;
+    }
+
+    current_amt
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

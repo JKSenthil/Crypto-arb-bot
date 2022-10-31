@@ -89,3 +89,17 @@ impl ERC20Token {
         ERC20_MAPPING[self].decimals
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::cmp::Ordering;
+
+    use crate::constants::token::ERC20Token::*;
+    #[test]
+    fn test_address_cmp() {
+        let res = USDC.get_address().cmp(&USDT.get_address());
+        assert_eq!(res, Ordering::Less);
+        let res = WMATIC.get_address().cmp(&WBTC.get_address());
+        assert_eq!(res, Ordering::Less);
+    }
+}
