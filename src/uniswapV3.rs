@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ethers::{
     abi::Abi,
     contract::Contract,
-    prelude::{abigen, Multicall, MulticallVersion},
+    prelude::{abigen, k256::elliptic_curve::consts::True, Multicall, MulticallVersion},
     providers::Middleware,
     types::{Address, U256},
 };
@@ -94,18 +94,18 @@ impl<M: Middleware + Clone> UniswapV3Client<M> {
         amount_out
     }
 
-    /// Returns quotes for all fee brackets in UniswapV3
+    /// Returns best quote, returns fee where quote exists
     pub async fn quote_multicall(
         &self,
         token_in: ERC20Token,
         token_out: ERC20Token,
         amount_in: U256,
-    ) -> [U256; 4] {
+    ) -> (u32, U256) {
         let fees: [u32; 4] = [100, 500, 3000, 10000];
         let mut multicall =
             Multicall::new_with_chain_id(self.provider.clone(), None, Some(137)).unwrap();
 
-        multicall = multicall.version(MulticallVersion::Multicall);
+        multicall = multicall.version(MulticallVersion::Multicall3);
 
         for fee in fees {
             let call = self
@@ -121,11 +121,17 @@ impl<M: Middleware + Clone> UniswapV3Client<M> {
                     ),
                 )
                 .unwrap();
-            multicall.add_call(call, false);
+            multicall.add_call(call, true);
         }
 
         let amount_outs: (U256, U256, U256, U256) = multicall.call().await.unwrap();
-        [amount_outs.0, amount_outs.1, amount_outs.2, amount_outs.3]
+        let data = [
+            (fees[0], amount_outs.0),
+            (fees[1], amount_outs.1),
+            (fees[2], amount_outs.2),
+            (fees[3], amount_outs.3),
+        ];
+        *data.iter().max_by(|(_, a), (_, b)| a.cmp(b)).unwrap()
     }
 }
 

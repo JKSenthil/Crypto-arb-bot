@@ -58,12 +58,12 @@ impl UniswapV2Pair {
     // TODO clean up repetition code later
     fn get_amount_out(self, amount_in: U256, reserve_in: U256, reserve_out: U256) -> U256 {
         let amount = match self.protocol {
-            UniswapV2::MESHSWAP => {
-                let amount_in_with_fee: U256 = amount_in.mul(9990);
-                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
-                let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
-                numerator / denominator
-            }
+            // UniswapV2::MESHSWAP => {
+            //     let amount_in_with_fee: U256 = amount_in.mul(9990);
+            //     let numerator: U256 = amount_in_with_fee.mul(reserve_out);
+            //     let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
+            //     numerator / denominator
+            // }
             UniswapV2::POLYCAT => {
                 let amount_in_with_fee: U256 = amount_in.mul(9976);
                 let numerator: U256 = amount_in_with_fee.mul(reserve_out);
@@ -414,7 +414,7 @@ mod tests {
         let provider_ws = Arc::new(provider_ws);
         let uniswapV2_client = UniswapV2Client::new(provider_ws);
 
-        let route = (MESHSWAP, WMATIC, USDT);
+        let route = (SUSHISWAP, USDT, WMATIC);
 
         // load in pair and save reserve data
         let amount_in = U256::from(1000) * U256::exp10(route.1.get_decimals().into());
@@ -434,7 +434,7 @@ mod tests {
         let mut pair = UniswapV2Pair::default();
         pair.update_metadata(route.0, route.1, route.2);
         pair.update_reserves(reserve0, reserve1);
-        let i_amount_out = pair.get_amounts_out(amount_in, true);
+        let i_amount_out = pair.get_amounts_out(amount_in, false);
         println!(
             "Uniswap get_amounts_out: {}, internal get_amounts_out: {}",
             amount_out, i_amount_out

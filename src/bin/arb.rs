@@ -6,11 +6,14 @@ use ethers::{
     types::{Address, U256},
 };
 use futures_util::StreamExt;
-use std::{cmp::Ordering, collections::HashMap, sync::Arc};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Instant};
 
 use tsuki::{
     constants::{
-        protocol::UniswapV2,
+        protocol::{
+            UniswapV2::{self},
+            UNISWAPV2_PROTOCOLS,
+        },
         token::ERC20Token::{self, *},
     },
     event_monitor::get_pair_sync_stream,
@@ -22,15 +25,10 @@ use tsuki::{
 #[derive(Debug, Clone, Copy)]
 enum Protocol {
     UniswapV2(UniswapV2),
-    UniswapV3,
+    UniswapV3 { fee: u32 },
 }
 
-struct Route {
-    protocol_path: Vec<Protocol>,
-    token_path: Vec<ERC20Token>,
-}
-
-// TODO: inline?
+#[inline(always)]
 fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Token, bool) {
     match token0.get_address().cmp(&token1.get_address()) {
         Ordering::Less => (token0, token1, true),
@@ -38,33 +36,87 @@ fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Tok
     }
 }
 
-async fn expected_out<M: Middleware>(
+fn best_uniswapV2(
     uniswapV2_markets: &Matrix3D<UniswapV2Pair>,
-    uniswapV3_client: UniswapV3Client<M>,
-    route: &Route,
+    token_in: ERC20Token,
+    token_out: ERC20Token,
     amount_in: U256,
-) -> U256 {
-    let mut token_in = route.token_path[0];
-    let mut current_amt = amount_in;
+) -> (U256, UniswapV2) {
+    let (token0, token1, is_same_order) = order_tokens(token_in, token_out);
 
-    let mut protocol;
-    let mut token_out;
-    for i in 1..route.token_path.len() {
-        protocol = route.protocol_path[i - 1];
-        token_out = route.token_path[i];
+    let mut best_protocol = UNISWAPV2_PROTOCOLS[0];
+    let mut best_amount_out = uniswapV2_markets
+        [(best_protocol as usize, token0 as usize, token1 as usize)]
+        .get_amounts_out(amount_in, is_same_order);
+    println!(
+        "is_same_order {}, token_in {}, token_out {}",
+        is_same_order,
+        token_in.get_symbol(),
+        token_out.get_symbol()
+    );
 
-        current_amt = match protocol {
-            Protocol::UniswapV2(protocol) => {
-                let (token0, token1, is_same_order) = order_tokens(token_in, token_out);
-                uniswapV2_markets[(protocol as usize, token0 as usize, token1 as usize)]
-                    .get_amounts_out(current_amt, is_same_order)
-            }
-            Protocol::UniswapV3 => U256::zero(),
-        };
-        token_in = token_out;
+    for i in 1..UNISWAPV2_PROTOCOLS.len() {
+        let protocol = UNISWAPV2_PROTOCOLS[i];
+        let amount_out = uniswapV2_markets[(protocol as usize, token0 as usize, token1 as usize)]
+            .get_amounts_out(amount_in, is_same_order);
+        println!(
+            "   Protocol {}, amount_out {}",
+            protocol.get_name(),
+            amount_out
+        );
+
+        if amount_out > best_amount_out {
+            best_protocol = protocol;
+            best_amount_out = amount_out;
+        }
     }
 
-    current_amt
+    (best_amount_out, best_protocol)
+}
+
+async fn best_uniswapV3<M: Middleware + Clone>(
+    uniswapV3_client: &UniswapV3Client<M>,
+    token_in: ERC20Token,
+    token_out: ERC20Token,
+    amount_in: U256,
+) -> (U256, u32) {
+    let return_data = uniswapV3_client
+        .quote_multicall(token_in, token_out, amount_in)
+        .await;
+
+    (return_data.1, return_data.0)
+}
+
+// TODO: is this theoretically sound? (always wanting to pick max value at each step)
+async fn compute_best_route<M: Middleware + Clone>(
+    uniswapV2_markets: &Matrix3D<UniswapV2Pair>,
+    uniswapV3_client: &UniswapV3Client<M>,
+    token_path: Vec<ERC20Token>,
+    amount_in: U256,
+) -> (U256, Vec<Protocol>) {
+    let mut protocols: Vec<Protocol> = Vec::with_capacity(token_path.len() - 1);
+
+    let mut token_in = token_path[0];
+    let mut token_out;
+    let mut current_amt = amount_in;
+    for i in 1..token_path.len() {
+        token_out = token_path[i];
+        let (best_amount_out_v3, best_pool_fee) =
+            best_uniswapV3(uniswapV3_client, token_in, token_out, current_amt).await;
+
+        let (best_amount_out, uniswapV2_protocol) =
+            best_uniswapV2(uniswapV2_markets, token_in, token_out, current_amt);
+
+        if best_amount_out > best_amount_out_v3 {
+            current_amt = best_amount_out;
+            protocols.push(Protocol::UniswapV2(uniswapV2_protocol));
+        } else {
+            current_amt = best_amount_out_v3;
+            protocols.push(Protocol::UniswapV3 { fee: best_pool_fee });
+        }
+        token_in = token_out;
+    }
+    (current_amt, protocols)
 }
 
 #[tokio::main]
@@ -118,39 +170,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for protocol in &protocols_list {
         for i in 0..tokens_list.len() {
             let token0 = tokens_list[i];
-            for j in i + 1..tokens_list.len() {
+            for j in (i + 1)..tokens_list.len() {
                 let token1 = tokens_list[j];
                 let reserve0 = pair_reserves[curr_idx].0;
                 let reserve1 = pair_reserves[curr_idx].1;
-                matrix[(*protocol as usize, i, j)].update_metadata(*protocol, token0, token1);
-                matrix[(*protocol as usize, i, j)].update_reserves(reserve0, reserve1);
+                matrix[(*protocol as usize, token0 as usize, token1 as usize)]
+                    .update_metadata(*protocol, token0, token1);
+                matrix[(*protocol as usize, token0 as usize, token1 as usize)]
+                    .update_reserves(reserve0, reserve1);
                 pair_lookup.insert(pair_addresses[curr_idx], (*protocol, token0, token1));
                 curr_idx += 1;
             }
         }
     }
 
+    let uniswapV3_client = UniswapV3Client::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
+    let token_path = vec![WETH, USDT, WETH];
+    let amount_in = U256::from(30_000000);
+    let now = Instant::now();
+    let (amount_out, protocol_route) =
+        compute_best_route(&matrix, &uniswapV3_client, token_path, amount_in).await;
+    println!("TIME ELAPSED: {}ms", now.elapsed().as_millis());
+    println!(
+        "{:?}",
+        protocol_route.into_iter().map(|x| match x {
+            Protocol::UniswapV2(v) => v.get_name().to_string(),
+            Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
+        })
+    );
+    println!("Amount in: {amount_in}, Amount Out: {amount_out}");
     // listen to pair sync events on blockchain
-    let mut stream = get_pair_sync_stream(&provider_ws, pair_addresses).await;
-    let pair_sync_abi =
-        BaseContract::from(parse_abi(&["event Sync(uint112 reserve0, uint112 reserve1)"]).unwrap());
+    // let mut stream = get_pair_sync_stream(&provider_ws, pair_addresses).await;
+    // let pair_sync_abi =
+    //     BaseContract::from(parse_abi(&["event Sync(uint112 reserve0, uint112 reserve1)"]).unwrap());
 
-    while let Some(log) = stream.next().await {
-        let (reserve0, reserve1): (U256, U256) = pair_sync_abi
-            .decode_event("Sync", log.topics, log.data)
-            .unwrap();
-        let (protocol, token0, token1) = pair_lookup[&log.address];
-        matrix[(protocol as usize, token0 as usize, token1 as usize)]
-            .update_reserves(reserve0, reserve1);
-        println!(
-            "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
-            log.transaction_hash.unwrap(),
-            log.block_number.unwrap(),
-            protocol.get_name(),
-            token0.get_symbol(),
-            token1.get_symbol()
-        );
-    }
+    // while let Some(log) = stream.next().await {
+    //     let (reserve0, reserve1): (U256, U256) = pair_sync_abi
+    //         .decode_event("Sync", log.topics, log.data)
+    //         .unwrap();
+    //     let (protocol, token0, token1) = pair_lookup[&log.address];
+    //     matrix[(protocol as usize, token0 as usize, token1 as usize)]
+    //         .update_reserves(reserve0, reserve1);
+    //     println!(
+    //         "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
+    //         log.transaction_hash.unwrap(),
+    //         log.block_number.unwrap(),
+    //         protocol.get_name(),
+    //         token0.get_symbol(),
+    //         token1.get_symbol()
+    //     );
+    // }
 
     Ok(())
 }
+
+// TIME ELAPSED: 557ms
+// Map { iter: Iter([UniswapV3 { fee: 500 }, UniswapV3 { fee: 3000 }, UniswapV2(QUICKSWAP)]) }
+// Amount in: 30000000, Amount Out: 3299990550688903951382293
