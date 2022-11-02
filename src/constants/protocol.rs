@@ -8,7 +8,7 @@ pub enum UniswapV2 {
     QUICKSWAP,
     POLYCAT,
     APESWAP,
-    // MESHSWAP,
+    MESHSWAP,
 }
 
 struct UniswapV2Data {
@@ -23,12 +23,12 @@ pub struct UniswapV3Data {
     pub factory_address: Address,
 }
 
-pub static UNISWAPV2_PROTOCOLS: [UniswapV2; 4] = [
+pub static UNISWAPV2_PROTOCOLS: [UniswapV2; 5] = [
     UniswapV2::SUSHISWAP,
     UniswapV2::QUICKSWAP,
     UniswapV2::POLYCAT,
     UniswapV2::APESWAP,
-    // UniswapV2::MESHSWAP,
+    UniswapV2::MESHSWAP,
 ];
 
 lazy_static! {
@@ -61,13 +61,13 @@ lazy_static! {
                 .unwrap(),
             factory_address: "0xCf083Be4164828f00cAE704EC15a36D711491284".parse::<Address>().unwrap(),
         },
-        // UniswapV2::MESHSWAP => UniswapV2Data {
-        //     name: "Meshwwap",
-        //     router_address: "0x10f4a785f458bc144e3706575924889954946639"
-        //         .parse::<Address>()
-        //         .unwrap(),
-        //     factory_address: "0x9f3044f7f9fc8bc9ed615d54845b4577b833282d".parse::<Address>().unwrap()
-        // },
+        UniswapV2::MESHSWAP => UniswapV2Data {
+            name: "Meshwwap",
+            router_address: "0x10f4a785f458bc144e3706575924889954946639"
+                .parse::<Address>()
+                .unwrap(),
+            factory_address: "0x9f3044f7f9fc8bc9ed615d54845b4577b833282d".parse::<Address>().unwrap()
+        },
     };
     pub static ref UNISWAP_V3: UniswapV3Data = UniswapV3Data {
         name: "UniswapV3",
@@ -100,7 +100,7 @@ impl UniswapV2 {
             UniswapV2::QUICKSWAP,
             UniswapV2::POLYCAT,
             UniswapV2::APESWAP,
-            // UniswapV2::MESHSWAP,
+            UniswapV2::MESHSWAP,
         ]
     }
 }

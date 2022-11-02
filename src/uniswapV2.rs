@@ -7,12 +7,15 @@ use ethers::{
     abi::Token::{self, *},
     contract::Contract,
     core::abi::Abi,
-    prelude::{abigen, Multicall},
+    prelude::abigen,
     providers::{Http, Middleware, Provider},
     types::{Address, U256},
 };
 
-use crate::constants::{protocol::UniswapV2, token::ERC20Token};
+use crate::{
+    constants::{protocol::UniswapV2, token::ERC20Token},
+    utils::multicall::Multicall,
+};
 
 abigen!(
     IUniswapV2Router02,
@@ -141,6 +144,10 @@ impl<M: Middleware> UniswapV2Client<M> {
             .call()
             .await
             .unwrap();
+        let a = router.get_amounts_out(
+            amount_in,
+            vec![token_in.get_address(), token_out.get_address()],
+        );
         return result[1];
     }
 
@@ -166,7 +173,7 @@ impl<M: Middleware> UniswapV2Client<M> {
     ) -> Vec<Address> {
         let provider = Arc::new(http_provider);
 
-        let mut multicall = Multicall::new(Arc::clone(&provider), None).await.unwrap();
+        let mut multicall = Multicall::new(Arc::clone(&provider));
 
         for pair in pairs_list {
             let (protocol, token0, token1) = pair;
@@ -210,19 +217,29 @@ impl<M: Middleware> UniswapV2Client<M> {
                 .method::<_, Address>("getPair", (token0.get_address(), token1.get_address()))
                 .unwrap();
 
-            multicall.add_call(call, false);
+            multicall.add_call(call);
         }
 
-        let return_data: Vec<Token> = multicall.call_raw().await.unwrap();
-        let mut data: Vec<Address> = Vec::new();
+        let return_data = multicall.call_raw().await;
+        let mut data: Vec<Address> = Vec::with_capacity(return_data.len());
         for token in return_data {
-            let token = token.into_tuple().unwrap();
-            let token = &token[1];
-            let val = match token {
-                Address(a) => *a,
-                _ => "0x0".parse::<Address>().unwrap(),
+            let address: Address;
+            match token {
+                Some(tokens) => {
+                    match &tokens[0] {
+                        Address(a) => {
+                            address = *a;
+                        }
+                        _ => {
+                            address = "0x0".parse::<Address>().unwrap();
+                        }
+                    };
+                }
+                None => {
+                    address = "0x0".parse::<Address>().unwrap();
+                }
             };
-            data.push(val);
+            data.push(address);
         }
         return data;
     }
@@ -241,7 +258,7 @@ impl<M: Middleware> UniswapV2Client<M> {
     ) -> Vec<(U256, U256)> {
         let provider = Arc::new(http_provider);
 
-        let mut multicall = Multicall::new(Arc::clone(&provider), None).await.unwrap();
+        let mut multicall = Multicall::new(Arc::clone(&provider));
 
         for pair_address in pair_addresses {
             let uniswapV2_pair_abi: Abi = serde_json::from_str(
@@ -283,26 +300,30 @@ impl<M: Middleware> UniswapV2Client<M> {
                 .method::<_, (u128, u128)>("getReserves", ())
                 .unwrap();
 
-            multicall.add_call(call, false);
+            multicall.add_call(call);
         }
 
-        let return_data: Vec<Token> = multicall.call_raw().await.unwrap();
+        let return_data: Vec<Option<Vec<Token>>> = multicall.call_raw().await;
         let mut data: Vec<(U256, U256)> = Vec::new();
         for token in return_data {
-            let token = token.into_tuple().unwrap();
-            let token = match &token[1] {
-                Tuple(tuple) => tuple,
-                _ => todo!(),
-            };
-            let val1 = match token[0] {
-                Uint(a) => a,
-                _ => U256::zero(),
-            };
-            let val2 = match token[1] {
-                Uint(a) => a,
-                _ => U256::zero(),
-            };
-            data.push((val1, val2));
+            match token {
+                Some(tokens) => {
+                    let val1 = &tokens[0];
+                    let val2 = &tokens[1];
+                    let val1 = match val1 {
+                        Uint(a) => *a,
+                        _ => U256::zero(),
+                    };
+                    let val2 = match val2 {
+                        Uint(a) => *a,
+                        _ => U256::zero(),
+                    };
+                    data.push((val1, val2));
+                }
+                None => {
+                    data.push((U256::zero(), U256::zero()));
+                }
+            }
         }
         return data;
     }
@@ -392,7 +413,7 @@ mod tests {
 
         let uniswapV2_client = UniswapV2Client::new(provider_ws);
         let pair_addresses = vec![
-            "0x34965ba0ac2451a34a0471f04cca3f990b8dea27"
+            "0x34965ba0ac2451a34a0471f04cca3f990b8dea26"
                 .parse::<Address>()
                 .unwrap(),
             "0x34965ba0ac2451a34a0471f04cca3f990b8dea27"
