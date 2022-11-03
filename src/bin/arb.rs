@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(ws.clone().listen_and_update_uniswapV2());
 
-    let amount_in = U256::from(30);
+    let amount_in = U256::from(300);
 
     let routes = vec![
         vec![USDC, DAI, USDC],
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![WMATIC, WETH, WMATIC],
     ];
 
-    println!("RUNNING ARBITRAGE");
+    println!("DETECTING ARBITRAGE");
 
     let mut stream = provider_ws.subscribe_blocks().await?;
     while let Some(block) = stream.next().await {
@@ -60,21 +60,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )))
         }
         for (i, future) in futures.into_iter().enumerate() {
-            let (amount_out, protocol_route) = future.await.unwrap();
-            // println!("TIME ELAPSED: {}ms", now.elapsed().as_millis());
-
-            let a = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
-            if amount_out > a {
-                println!(
-                    "({i}), block_hash: {:?}, {:?}",
-                    block,
-                    protocol_route.into_iter().map(|x| match x {
-                        Protocol::UniswapV2(v) => v.get_name().to_string(),
-                        Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
-                    }),
-                );
-                println!("Amount in: {a}, Amount Out: {amount_out}");
-            }
+            let result = future.await;
+            match result {
+                Ok((amount_out, protocol_route)) => {
+                    let a = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
+                    if amount_out > a {
+                        println!(
+                            "({i}), block_hash: {:?}, {:?}",
+                            block,
+                            protocol_route.into_iter().map(|x| match x {
+                                Protocol::UniswapV2(v) => v.get_name().to_string(),
+                                Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
+                            }),
+                        );
+                        println!("Amount in: {a}, Amount Out: {amount_out}");
+                    }
+                }
+                Err(_) => {}
+            };
         }
     }
 
