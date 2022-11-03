@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if amount_out > a {
                         println!(
                             "({i}), block_hash: {:?}, {:?}",
-                            block,
+                            block.hash.unwrap(),
                             protocol_route.into_iter().map(|x| match x {
                                 Protocol::UniswapV2(v) => v.get_name().to_string(),
                                 Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
