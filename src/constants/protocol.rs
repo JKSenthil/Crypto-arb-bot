@@ -2,7 +2,7 @@ use enum_map::{enum_map, Enum, EnumMap};
 use ethers::types::Address;
 use lazy_static::lazy_static;
 
-#[derive(Debug, Enum, Clone, Copy)]
+#[derive(PartialEq, Debug, Enum, Clone, Copy)]
 pub enum UniswapV2 {
     SUSHISWAP,
     QUICKSWAP,
@@ -23,12 +23,12 @@ pub struct UniswapV3Data {
     pub factory_address: Address,
 }
 
-pub static UNISWAPV2_PROTOCOLS: [UniswapV2; 5] = [
+pub static UNISWAPV2_PROTOCOLS: [UniswapV2; 4] = [
     UniswapV2::SUSHISWAP,
     UniswapV2::QUICKSWAP,
     UniswapV2::POLYCAT,
     UniswapV2::APESWAP,
-    UniswapV2::MESHSWAP,
+    // UniswapV2::MESHSWAP,
 ];
 
 lazy_static! {
@@ -62,7 +62,7 @@ lazy_static! {
             factory_address: "0xCf083Be4164828f00cAE704EC15a36D711491284".parse::<Address>().unwrap(),
         },
         UniswapV2::MESHSWAP => UniswapV2Data {
-            name: "Meshwwap",
+            name: "Meshswap",
             router_address: "0x10f4a785f458bc144e3706575924889954946639"
                 .parse::<Address>()
                 .unwrap(),
@@ -100,7 +100,7 @@ impl UniswapV2 {
             UniswapV2::QUICKSWAP,
             UniswapV2::POLYCAT,
             UniswapV2::APESWAP,
-            UniswapV2::MESHSWAP,
+            // UniswapV2::MESHSWAP,
         ]
     }
 }

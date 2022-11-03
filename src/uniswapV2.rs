@@ -60,13 +60,16 @@ impl UniswapV2Pair {
 
     // TODO clean up repetition code later
     fn get_amount_out(self, amount_in: U256, reserve_in: U256, reserve_out: U256) -> U256 {
+        if reserve_in == U256::zero() || reserve_out == U256::zero() {
+            return U256::zero();
+        }
         let amount = match self.protocol {
-            // UniswapV2::MESHSWAP => {
-            //     let amount_in_with_fee: U256 = amount_in.mul(9990);
-            //     let numerator: U256 = amount_in_with_fee.mul(reserve_out);
-            //     let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
-            //     numerator / denominator
-            // }
+            UniswapV2::MESHSWAP => {
+                let amount_in_with_fee: U256 = amount_in.mul(9990);
+                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
+                let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
+                numerator / denominator
+            }
             UniswapV2::POLYCAT => {
                 let amount_in_with_fee: U256 = amount_in.mul(9976);
                 let numerator: U256 = amount_in_with_fee.mul(reserve_out);

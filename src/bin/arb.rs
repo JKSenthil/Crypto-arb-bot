@@ -1,25 +1,16 @@
 use dotenv::dotenv;
 use ethers::{
-    abi::parse_abi,
-    prelude::BaseContract,
     providers::{Http, Middleware, Provider, Ws},
-    types::{Address, U256},
+    types::U256,
 };
 use futures_util::StreamExt;
-use std::{cmp::Ordering, collections::HashMap, sync::Arc, time::Instant};
+use std::sync::Arc;
 
 use tsuki::{
     constants::{
-        protocol::{
-            UniswapV2::{self},
-            UNISWAPV2_PROTOCOLS,
-        },
-        token::ERC20Token::{self, *},
+        protocol::UniswapV2::{self},
+        token::ERC20Token::*,
     },
-    event_monitor::get_pair_sync_stream,
-    uniswapV2::{UniswapV2Client, UniswapV2Pair},
-    uniswapV3::UniswapV3Client,
-    utils::matrix::Matrix3D,
     world::{Protocol, WorldState},
 };
 
@@ -34,59 +25,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
     let uniswapV2_list = UniswapV2::get_all_protoccols();
-    let ws = WorldState::init(provider, provider_ws, tokens_list, uniswapV2_list).await;
-    // let ws = Arc::new(ws);
+    let ws = WorldState::init(
+        provider,
+        Provider::<Ws>::connect(&rpc_node_ws_url).await?,
+        provider_ws.clone(),
+        tokens_list,
+        uniswapV2_list,
+    )
+    .await;
+    let ws = Arc::new(ws);
 
-    let mut futures = Vec::new();
-    let task1 = tokio::spawn(async move {
-        ws.compute_best_route(vec![USDC, DAI, USDC], U256::from(30_000000))
-            .await
-    });
-    futures.push(task1);
-    let task2 = tokio::spawn(async move {
-        ws.compute_best_route(vec![USDC, WMATIC, USDC], U256::from(30_000000))
-            .await
-    });
+    tokio::spawn(ws.clone().listen_and_update_uniswapV2());
 
-    let token_path = vec![WETH, USDT, WETH];
-    let amount_in = U256::from(30) * U256::exp10(WETH.get_decimals().into());
-    let now = Instant::now();
-    let (amount_out, protocol_route) = ws.compute_best_route(token_path, amount_in).await;
-    println!("TIME ELAPSED: {}ms", now.elapsed().as_millis());
-    println!(
-        "{:?}",
-        protocol_route.into_iter().map(|x| match x {
-            Protocol::UniswapV2(v) => v.get_name().to_string(),
-            Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
-        })
-    );
-    println!("Amount in: {amount_in}, Amount Out: {amount_out}");
+    let amount_in = U256::from(30);
 
-    // listen to pair sync events on blockchain
-    // let mut stream = get_pair_sync_stream(&provider_ws, pair_addresses).await;
-    // let pair_sync_abi =
-    //     BaseContract::from(parse_abi(&["event Sync(uint112 reserve0, uint112 reserve1)"]).unwrap());
+    let routes = vec![
+        vec![USDC, DAI, USDC],
+        vec![USDC, USDT, USDC],
+        vec![USDC, WETH, USDC],
+        vec![USDC, WMATIC, USDC],
+        vec![WMATIC, WETH, WMATIC],
+    ];
 
-    // while let Some(log) = stream.next().await {
-    //     let (reserve0, reserve1): (U256, U256) = pair_sync_abi
-    //         .decode_event("Sync", log.topics, log.data)
-    //         .unwrap();
-    //     let (protocol, token0, token1) = pair_lookup[&log.address];
-    //     matrix[(protocol as usize, token0 as usize, token1 as usize)]
-    //         .update_reserves(reserve0, reserve1);
-    //     println!(
-    //         "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
-    //         log.transaction_hash.unwrap(),
-    //         log.block_number.unwrap(),
-    //         protocol.get_name(),
-    //         token0.get_symbol(),
-    //         token1.get_symbol()
-    //     );
-    // }
+    println!("RUNNING ARBITRAGE");
+
+    let mut stream = provider_ws.subscribe_blocks().await?;
+    while let Some(block) = stream.next().await {
+        // when new block arrives, check arbitrage opportunity
+        let mut futures = Vec::with_capacity(routes.len());
+        for route in &routes {
+            futures.push(tokio::spawn(ws.clone().compute_best_route(
+                route.to_vec(),
+                amount_in * U256::exp10(route[0].get_decimals() as usize),
+            )))
+        }
+        for (i, future) in futures.into_iter().enumerate() {
+            let (amount_out, protocol_route) = future.await.unwrap();
+            // println!("TIME ELAPSED: {}ms", now.elapsed().as_millis());
+
+            let a = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
+            if amount_out > a {
+                println!(
+                    "({i}), block_hash: {:?}, {:?}",
+                    block,
+                    protocol_route.into_iter().map(|x| match x {
+                        Protocol::UniswapV2(v) => v.get_name().to_string(),
+                        Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
+                    }),
+                );
+                println!("Amount in: {a}, Amount Out: {amount_out}");
+            }
+        }
+    }
 
     Ok(())
 }
-
-// TIME ELAPSED: 557ms
-// Map { iter: Iter([UniswapV3 { fee: 500 }, UniswapV3 { fee: 3000 }, UniswapV2(QUICKSWAP)]) }
-// Amount in: 30000000, Amount Out: 3299990550688903951382293

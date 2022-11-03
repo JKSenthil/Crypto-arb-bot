@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ethers::{
     providers::{Middleware, Provider, SubscriptionStream, Ws},
     types::{Address, Log, H256},
@@ -6,13 +8,13 @@ use ethers::{
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-struct EthSubscribeLogArgs {
+pub struct EthSubscribeLogArgs {
     pub address: Vec<Address>,
     pub topics: Vec<H256>,
 }
 
 impl EthSubscribeLogArgs {
-    fn new(addresses: Vec<Address>, topics: Vec<H256>) -> Self {
+    pub fn new(addresses: Vec<Address>, topics: Vec<H256>) -> Self {
         Self {
             address: addresses,
             topics: topics,
