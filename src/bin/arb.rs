@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = SignerMiddleware::new(provider_ws.clone(), wallet);
     let client = Arc::new(client);
     let arbitrage_contract = Flashloan::new(
-        "0x7586b61cd07d3f7b1e701d0ab719f9feea4674af"
+        "0x52415ffd6d6f604224fe0FbBA2395fFBa10C1F7D"
             .parse::<Address>()
             .unwrap(),
         client,
@@ -147,7 +147,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let val = provider_ws.clone().get_gas_price().await.unwrap();
                             match arbitrage_contract
                                 .execute_arbitrage(params)
-                                .gas_price(val + val)
+                                .gas_price(val)
                                 .send()
                                 .await
                             {

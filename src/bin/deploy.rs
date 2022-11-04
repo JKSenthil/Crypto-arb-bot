@@ -11,7 +11,7 @@ use ethers::{
 };
 
 abigen!(Liquidations, "abis/Liquidations.json");
-abigen!(Flashloan, "abis/Flashloan.json");
+abigen!(Flashloan, "abis/FlashloanV2.json");
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Arc::new(SignerMiddleware::new(provider.clone(), wallet));
 
     let price = provider.clone().get_gas_price().await?;
-    let price = U256::from(19_000_000);
+    // let price = U256::from(19_000_000);
     let _deploy_txn = Flashloan::deploy(
         client,
         "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
@@ -38,12 +38,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .unwrap();
 
-    let gas = provider
-        .clone()
-        .estimate_gas(&_deploy_txn.deployer.tx, None)
-        .await?;
+    // let gas = provider
+    //     .clone()
+    //     .estimate_gas(&_deploy_txn.deployer.tx, None)
+    //     .await?;
 
-    let resp = _deploy_txn.gas(price).send().await?;
+    let resp = _deploy_txn.gas_price(price).send().await?;
 
     // let mut t = _deploy_txn.clone();
     // t.gas();

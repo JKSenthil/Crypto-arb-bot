@@ -1,3 +1,4 @@
-(1: First contract) 0x5d03b3678c120f3ecc04eb96daab6e15b012022e
+(1: First contract) 0x5d03b3678c120f3ecc04eb96daab6e15b012022e - Aave dodo frontrunner
 (2: Secon contract) 0xb4ee5da93947a68a1e9f91734ba489e313c5ef9b - FAILED
-(3: Third contract) 0x7586b61cd07d3f7b1e701d0ab719f9feea4674af
+(3: Third contract) 0x7586b61cd07d3f7b1e701d0ab719f9feea4674af - Flashloan
+(4: Fourt contract) 0x52415ffd6d6f604224fe0FbBA2395fFBa10C1F7D - FlashloanV2 (better printing)
