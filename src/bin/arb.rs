@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stream = provider_ws.subscribe_blocks().await?;
     while let Some(block) = stream.next().await {
         // when new block arrives, check arbitrage opportunity
-        let now = Instant::now();
+        // let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             futures.push(tokio::spawn(ws.clone().compute_best_route(
@@ -178,7 +178,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(_) => {}
             };
         }
-        println!("TIME ELAPSED: {:?}ms", now.elapsed().as_millis());
     }
 
     Ok(())
