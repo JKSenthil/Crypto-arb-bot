@@ -53,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::spawn(ws.clone().listen_and_update_uniswapV2());
 
-    let amount_in = U256::from(300);
+    let amount_in = U256::from(3000);
 
     let routes = vec![
         vec![USDC, WETH, USDC],
@@ -62,14 +62,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![USDT, WMATIC, USDT],
         vec![DAI, WETH, DAI],
         vec![DAI, WMATIC, DAI],
-        vec![WMATIC, USDC, WMATIC],
-        vec![WMATIC, DAI, WMATIC],
-        vec![WMATIC, USDT, WMATIC],
-        vec![WMATIC, WETH, WMATIC],
-        vec![WETH, USDC, WETH],
-        vec![WETH, DAI, WETH],
-        vec![WETH, USDT, WETH],
-        vec![WETH, WMATIC, WETH],
+        // vec![WMATIC, USDC, WMATIC],
+        // vec![WMATIC, DAI, WMATIC],
+        // vec![WMATIC, USDT, WMATIC],
+        // vec![WMATIC, WETH, WMATIC],
+        // vec![WETH, USDC, WETH],
+        // vec![WETH, DAI, WETH],
+        // vec![WETH, USDT, WETH],
+        // vec![WETH, WMATIC, WETH],
     ];
 
     let wallet = std::env::var("PRIVATE_KEY")?
