@@ -86,10 +86,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("DETECTING ARBITRAGE");
 
-    // every 10 blocks, clear out stream to stay up to date
-
     let mut stream = provider_ws.subscribe_blocks().await?;
     while let Some(block) = stream.next().await {
+        let block_number = provider_ws.get_block_number().await.unwrap();
+        if block.number.unwrap() != block_number {
+            println!("skipping to latest block");
+        }
         // when new block arrives, check arbitrage opportunity
         // let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
@@ -108,7 +110,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let profit = amount_out - a;
                         let profit = profit.as_u128() as f64;
                         if threshold(routes[i][0], profit) {
-                            println!("Sending txn...");
+                            // println!("Opportunity found on block number: {:?}", block_number);
+
+                            println!(
+                                "Sending txn..., expected profit: {:?}, amount_out: {:?}",
+                                profit, amount_out
+                            );
 
                             // send transaction order
                             let tp = routes[i]
@@ -123,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 match protocol {
                                     Protocol::UniswapV2(p) => {
                                         pp.push(p.get_router_address());
-                                        pt.push(0_u8);
+                                        pt.push(0);
                                         fees.push(0);
                                     }
                                     Protocol::UniswapV3 { fee } => {
@@ -145,6 +152,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 fees: fees,
                             };
                             let val = provider_ws.clone().get_gas_price().await.unwrap();
+                            if block_number != provider_ws.get_block_number().await.unwrap() {
+                                println!("  TOO SLOW, BLOCK has already moved on!");
+                                break;
+                            }
                             match arbitrage_contract
                                 .execute_arbitrage(params)
                                 .gas_price(val)
@@ -166,10 +177,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }),
                             );
 
-                            // manually wait for either txn success or failure
-                            // clear block stream to be up to date
-                            // break out of for loop
-                            stream = provider_ws.subscribe_blocks().await?;
                             break;
                         }
                         println!("Amount in: {a}, Amount Out: {amount_out}");
