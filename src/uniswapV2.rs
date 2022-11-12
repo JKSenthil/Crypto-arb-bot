@@ -171,12 +171,9 @@ impl<M: Middleware> UniswapV2Client<M> {
 
     pub async fn get_pair_address_multicall(
         &self,
-        http_provider: Provider<Http>,
         pairs_list: Vec<(UniswapV2, ERC20Token, ERC20Token)>,
     ) -> Vec<Address> {
-        let provider = Arc::new(http_provider);
-
-        let mut multicall = Multicall::new(Arc::clone(&provider));
+        let mut multicall = Multicall::new(self.provider.clone());
 
         for pair in pairs_list {
             let (protocol, token0, token1) = pair;
@@ -210,10 +207,10 @@ impl<M: Middleware> UniswapV2Client<M> {
             )
             .unwrap();
 
-            let contract = Contract::<Provider<Http>>::new(
+            let contract = Contract::new(
                 protocol.get_factory_address(),
                 uniswapV2_pair_abi,
-                Arc::clone(&provider),
+                self.provider.clone(),
             );
 
             let call = contract
@@ -256,12 +253,9 @@ impl<M: Middleware> UniswapV2Client<M> {
 
     pub async fn get_pair_reserves_multicall(
         &self,
-        http_provider: Provider<Http>,
         pair_addresses: &Vec<Address>,
     ) -> Vec<(U256, U256)> {
-        let provider = Arc::new(http_provider);
-
-        let mut multicall = Multicall::new(Arc::clone(&provider));
+        let mut multicall = Multicall::new(self.provider.clone());
 
         for pair_address in pair_addresses {
             let uniswapV2_pair_abi: Abi = serde_json::from_str(
@@ -293,11 +287,7 @@ impl<M: Middleware> UniswapV2Client<M> {
             )
             .unwrap();
 
-            let contract = Contract::<Provider<Http>>::new(
-                *pair_address,
-                uniswapV2_pair_abi,
-                Arc::clone(&provider),
-            );
+            let contract = Contract::new(*pair_address, uniswapV2_pair_abi, self.provider.clone());
 
             let call = contract
                 .method::<_, (u128, u128)>("getReserves", ())
@@ -387,10 +377,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_pair_address_multicall() {
         dotenv::dotenv().ok();
-        let rpc_node_url = std::env::var("ALCHEMY_POLYGON_RPC_URL").unwrap();
         let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL").unwrap();
 
-        let provider = Provider::<Http>::try_from(&rpc_node_url).unwrap();
         let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await.unwrap();
         let provider_ws = Arc::new(provider_ws);
 
@@ -399,7 +387,7 @@ mod tests {
         let pairs_list = vec![(SUSHISWAP, USDC, USDT), (SUSHISWAP, USDC, WETH)];
 
         let results = uniswapV2_client
-            .get_pair_address_multicall(provider, pairs_list)
+            .get_pair_address_multicall(pairs_list)
             .await;
         println!("{:?}", results);
     }
@@ -407,10 +395,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_pair_reserves_multicall() {
         dotenv::dotenv().ok();
-        let rpc_node_url = std::env::var("ALCHEMY_POLYGON_RPC_URL").unwrap();
         let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL").unwrap();
 
-        let provider = Provider::<Http>::try_from(&rpc_node_url).unwrap();
         let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await.unwrap();
         let provider_ws = Arc::new(provider_ws);
 
@@ -424,7 +410,7 @@ mod tests {
                 .unwrap(),
         ];
         let result = uniswapV2_client
-            .get_pair_reserves_multicall(provider, &pair_addresses)
+            .get_pair_reserves_multicall(&pair_addresses)
             .await;
         println!("{:?}", result);
     }

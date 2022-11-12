@@ -69,12 +69,12 @@ impl<M: Middleware + Clone> WorldState<M> {
         }
 
         let pair_addresses = uniswapV2_client
-            .get_pair_address_multicall(provider_http.clone(), pair_address_multicall_input)
+            .get_pair_address_multicall(pair_address_multicall_input)
             .await;
 
         // grab all reserves for pair addresses
         let pair_reserves = uniswapV2_client
-            .get_pair_reserves_multicall(provider_http.clone(), &pair_addresses)
+            .get_pair_reserves_multicall(&pair_addresses)
             .await;
 
         // populate UniswapV2Pair matrix and reverse lookup table
