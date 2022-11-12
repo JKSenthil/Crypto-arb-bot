@@ -36,14 +36,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // dotenv().ok();
     // let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
     // let provider = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
-    let provider = Provider::connect_ipc("/var/lib/bor/bor.ipc").await?;
+    let provider = Provider::connect_ipc("/mountdrive/.bor/data/bor.ipc").await?;
     let provider = Arc::new(provider);
 
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
     let uniswapV2_list = UniswapV2::get_all_protoccols();
     let ws = WorldState::init(
         provider.clone(),
-        Provider::connect_ipc("/var/lib/bor/bor.ipc").await?,
+        Provider::connect_ipc("/mountdrive/.bor/data/bor.ipc").await?,
         tokens_list,
         uniswapV2_list,
     )
