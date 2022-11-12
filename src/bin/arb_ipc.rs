@@ -1,7 +1,7 @@
 use dotenv::dotenv;
 use ethers::{
     prelude::{abigen, SignerMiddleware},
-    providers::{Http, Middleware, Provider, Ws},
+    providers::{Middleware, Provider, Ws},
     signers::{LocalWallet, Signer},
     types::{Address, U256},
 };
@@ -13,7 +13,6 @@ use tsuki::{
         protocol::UniswapV2::{self},
         token::ERC20Token::{self, *},
     },
-    event_monitor::get_pair_sync_stream,
     world::{Protocol, WorldState},
 };
 
@@ -34,15 +33,17 @@ fn threshold(token: ERC20Token, amount_diff: f64) -> bool {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load providers
-    dotenv().ok();
-    let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
-    let provider_ws = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
+    // dotenv().ok();
+    // let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
+    // let provider = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
+    let provider = Provider::connect_ipc("/var/lib/bor/bor.ipc").await?;
+    let provider = Arc::new(provider);
 
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
     let uniswapV2_list = UniswapV2::get_all_protoccols();
     let ws = WorldState::init(
-        provider_ws.clone(),
-        Provider::<Ws>::connect(&rpc_node_ws_url).await?,
+        provider.clone(),
+        Provider::connect_ipc("/var/lib/bor/bor.ipc").await?,
         tokens_list,
         uniswapV2_list,
     )
@@ -72,7 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wallet = std::env::var("PRIVATE_KEY")?
         .parse::<LocalWallet>()?
         .with_chain_id(137u64);
-    let client = SignerMiddleware::new(provider_ws.clone(), wallet);
+    let client = SignerMiddleware::new(provider.clone(), wallet);
     let client = Arc::new(client);
     let arbitrage_contract = Flashloan::new(
         "0x52415ffd6d6f604224fe0FbBA2395fFBa10C1F7D"
@@ -83,9 +84,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("DETECTING ARBITRAGE");
 
-    let mut stream = provider_ws.subscribe_blocks().await?;
+    let mut stream = provider.subscribe_blocks().await?;
     while let Some(block) = stream.next().await {
-        let block_number = provider_ws.get_block_number().await;
+        let block_number = provider.get_block_number().await;
         match block_number {
             Ok(num) => {
                 if num != block.number.unwrap() {
@@ -157,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 fees: fees,
                             };
                             // 20% markup on gas
-                            let mut val = provider_ws.clone().get_gas_price().await.unwrap();
+                            let mut val = provider.clone().get_gas_price().await.unwrap();
                             val = val.checked_mul(U256::from(120)).unwrap();
                             val = val.checked_div(U256::from(100)).unwrap();
                             match arbitrage_contract
