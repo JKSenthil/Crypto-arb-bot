@@ -33,7 +33,7 @@ fn threshold(token: ERC20Token, amount_diff: f64) -> bool {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load providers
-    // dotenv().ok();
+    dotenv().ok();
     // let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
     // let provider = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
     let provider = Provider::connect_ipc("/mountdrive/.bor/data/bor.ipc").await?;
