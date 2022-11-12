@@ -13,6 +13,7 @@ use tsuki::{
         protocol::UniswapV2::{self},
         token::ERC20Token::{self, *},
     },
+    event_monitor::get_pair_sync_stream,
     world::{Protocol, WorldState},
 };
 
@@ -42,15 +43,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
     let uniswapV2_list = UniswapV2::get_all_protoccols();
     let ws = WorldState::init(
-        provider,
-        Provider::<Ws>::connect(&rpc_node_ws_url).await?,
         provider_ws.clone(),
+        Provider::<Ws>::connect(&rpc_node_ws_url).await?,
         tokens_list,
         uniswapV2_list,
     )
     .await;
     let ws = Arc::new(ws);
-
     tokio::spawn(ws.clone().listen_and_update_uniswapV2());
 
     let amount_in = U256::from(3000);

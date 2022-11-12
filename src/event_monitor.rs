@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ethers::{
-    providers::{Middleware, Provider, SubscriptionStream, Ws},
+    providers::{Middleware, Provider, PubsubClient, SubscriptionStream, Ws},
     types::{Address, Log, H256},
     utils::{self, keccak256},
 };
@@ -23,10 +23,10 @@ impl EthSubscribeLogArgs {
 }
 
 // https://geth.ethereum.org/docs/rpc/pubsub
-pub async fn get_pair_sync_stream(
-    provider_ws: &Provider<Ws>,
+pub async fn get_pair_sync_stream<P: PubsubClient>(
+    provider: &Provider<P>,
     pair_addresses: Vec<Address>,
-) -> SubscriptionStream<Ws, Log> {
+) -> SubscriptionStream<P, Log> {
     let command = "logs";
     let command = utils::serialize(&command);
 
@@ -37,10 +37,7 @@ pub async fn get_pair_sync_stream(
     let args = EthSubscribeLogArgs::new(pair_addresses, topics);
     let args = utils::serialize(&args);
 
-    let stream = provider_ws
-        .subscribe::<_, Log>([command, args])
-        .await
-        .unwrap();
+    let stream = provider.subscribe::<_, Log>([command, args]).await.unwrap();
     return stream;
 }
 

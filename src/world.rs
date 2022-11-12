@@ -1,8 +1,8 @@
 use ethers::{
     abi::{parse_abi, Address},
     prelude::BaseContract,
-    providers::{Http, Middleware, Provider, Ws},
-    types::U256,
+    providers::{Http, Middleware, Provider, PubsubClient, SubscriptionStream, Ws},
+    types::{Log, U256},
 };
 use futures_util::StreamExt;
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
@@ -33,20 +33,19 @@ fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Tok
     }
 }
 
-pub struct WorldState<M> {
+pub struct WorldState<M, P> {
     provider: Arc<M>,
-    provider_ws: Provider<Ws>,
+    stream_provider: Provider<P>,
     uniswapV2_markets: RwLock<Matrix3D<UniswapV2Pair>>,
     uniswapV2_pair_lookup: HashMap<Address, (UniswapV2, ERC20Token, ERC20Token)>,
-    uniswapV2_pair_addresses: Vec<Address>,
+    pub uniswapV2_pair_addresses: Vec<Address>,
     uniswapV3_client: UniswapV3Client<M>,
 }
 
-impl<M: Middleware + Clone> WorldState<M> {
+impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
     pub async fn init(
-        provider_http: Provider<Http>,
-        provider_ws: Provider<Ws>,
         provider: Arc<M>,
+        stream_provider: Provider<P>,
         mut tokens_list: Vec<ERC20Token>,
         uniswapV2_list: Vec<UniswapV2>,
     ) -> Self {
@@ -108,7 +107,7 @@ impl<M: Middleware + Clone> WorldState<M> {
 
         WorldState {
             provider: provider.clone(),
-            provider_ws: provider_ws,
+            stream_provider: stream_provider,
             uniswapV2_markets: RwLock::new(matrix),
             uniswapV2_pair_lookup: pair_lookup,
             uniswapV2_pair_addresses: pair_addresses,
@@ -118,11 +117,11 @@ impl<M: Middleware + Clone> WorldState<M> {
 
     pub async fn listen_and_update_uniswapV2(self: Arc<Self>) {
         // get sync stream
-        // https://geth.ethereum.org/docs/rpc/pubsub
-        let mut stream =
-            get_pair_sync_stream(&self.provider_ws, self.uniswapV2_pair_addresses.clone()).await;
-
-        // let stream = get_pair_sync_stream(&self.provider, &self.uniswapV2_pair_addresses).await;
+        let mut stream = get_pair_sync_stream(
+            &self.stream_provider,
+            self.uniswapV2_pair_addresses.to_vec(),
+        )
+        .await;
         let pair_sync_abi = BaseContract::from(
             parse_abi(&["event Sync(uint112 reserve0, uint112 reserve1)"]).unwrap(),
         );
@@ -135,14 +134,14 @@ impl<M: Middleware + Clone> WorldState<M> {
             self.uniswapV2_markets.write().await
                 [(protocol as usize, token0 as usize, token1 as usize)]
                 .update_reserves(reserve0, reserve1);
-            // println!(
-            //     "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
-            //     log.transaction_hash.unwrap(),
-            //     log.block_number.unwrap(),
-            //     protocol.get_name(),
-            //     token0.get_symbol(),
-            //     token1.get_symbol()
-            // );
+            println!(
+                "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
+                log.transaction_hash.unwrap(),
+                log.block_number.unwrap(),
+                protocol.get_name(),
+                token0.get_symbol(),
+                token1.get_symbol()
+            );
         }
     }
 
