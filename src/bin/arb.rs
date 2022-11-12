@@ -112,6 +112,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = future.await;
             match result {
                 Ok((amount_out, protocol_route)) => {
+                    // println!("{}) time elasped: {:?}ms", i, now.elapsed().as_millis());
                     let a = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
                     if amount_out > a {
                         let profit = amount_out - a;

@@ -134,14 +134,14 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
             self.uniswapV2_markets.write().await
                 [(protocol as usize, token0 as usize, token1 as usize)]
                 .update_reserves(reserve0, reserve1);
-            println!(
-                "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
-                log.transaction_hash.unwrap(),
-                log.block_number.unwrap(),
-                protocol.get_name(),
-                token0.get_symbol(),
-                token1.get_symbol()
-            );
+            // println!(
+            //     "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
+            //     log.transaction_hash.unwrap(),
+            //     log.block_number.unwrap(),
+            //     protocol.get_name(),
+            //     token0.get_symbol(),
+            //     token1.get_symbol()
+            // );
         }
     }
 

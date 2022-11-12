@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         // when new block arrives, check arbitrage opportunity
-        // let now = Instant::now();
+        let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             futures.push(tokio::spawn(ws.clone().compute_best_route(
@@ -113,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let result = future.await;
             match result {
                 Ok((amount_out, protocol_route)) => {
+                    println!("{}) time elasped: {:?}ms", i, now.elapsed().as_millis());
                     let a = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
                     if amount_out > a {
                         let profit = amount_out - a;
