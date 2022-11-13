@@ -1,8 +1,8 @@
 use ethers::{
     abi::{parse_abi, Address},
     prelude::BaseContract,
-    providers::{Http, Middleware, Provider, PubsubClient, SubscriptionStream, Ws},
-    types::{Log, U256},
+    providers::{Middleware, Provider, PubsubClient},
+    types::U256,
 };
 use futures_util::StreamExt;
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};

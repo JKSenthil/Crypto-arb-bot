@@ -1,23 +1,32 @@
+use clap::Parser;
 use dotenv::dotenv;
 use ethers::{
     prelude::{abigen, SignerMiddleware},
-    providers::{Http, Middleware, Provider, Ws},
+    providers::{Middleware, Provider, PubsubClient, Ws},
     signers::{LocalWallet, Signer},
     types::{Address, U256},
 };
 use futures_util::StreamExt;
 use std::{sync::Arc, time::Instant};
+use tokio::task::JoinHandle;
 
 use tsuki::{
     constants::{
         protocol::UniswapV2::{self},
         token::ERC20Token::{self, *},
     },
-    event_monitor::get_pair_sync_stream,
     world::{Protocol, WorldState},
 };
 
 abigen!(Flashloan, "abis/Flashloan.json");
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// use ipc (if running on node)
+    #[arg(short, long)]
+    use_ipc: bool,
+}
 
 #[inline(always)]
 fn threshold(token: ERC20Token, amount_diff: f64) -> bool {
@@ -31,61 +40,42 @@ fn threshold(token: ERC20Token, amount_diff: f64) -> bool {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // load providers
-    dotenv().ok();
-    let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
-    let provider_ws = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
-
+async fn run_loop<P: PubsubClient + Clone + 'static>(
+    provider: Arc<Provider<P>>,
+    stream_provider: Provider<P>,
+    routes: Vec<Vec<ERC20Token>>,
+) {
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
-    let uniswapV2_list = UniswapV2::get_all_protoccols();
     let ws = WorldState::init(
-        provider_ws.clone(),
-        Provider::<Ws>::connect(&rpc_node_ws_url).await?,
+        provider.clone(),
+        stream_provider,
         tokens_list,
-        uniswapV2_list,
+        UniswapV2::get_all_protoccols(),
     )
     .await;
+
     let ws = Arc::new(ws);
     tokio::spawn(ws.clone().listen_and_update_uniswapV2());
 
     let amount_in = U256::from(3000);
 
-    let routes = vec![
-        vec![USDC, WETH, USDC],
-        vec![USDC, WMATIC, USDC],
-        vec![USDT, WETH, USDT],
-        vec![USDT, WMATIC, USDT],
-        vec![DAI, WETH, DAI],
-        vec![DAI, WMATIC, DAI],
-        // vec![WMATIC, USDC, WMATIC],
-        // vec![WMATIC, DAI, WMATIC],
-        // vec![WMATIC, USDT, WMATIC],
-        // vec![WMATIC, WETH, WMATIC],
-        // vec![WETH, USDC, WETH],
-        // vec![WETH, DAI, WETH],
-        // vec![WETH, USDT, WETH],
-        // vec![WETH, WMATIC, WETH],
-    ];
-
-    let wallet = std::env::var("PRIVATE_KEY")?
-        .parse::<LocalWallet>()?
+    let wallet = std::env::var("PRIVATE_KEY")
+        .unwrap()
+        .parse::<LocalWallet>()
+        .unwrap()
         .with_chain_id(137u64);
-    let client = SignerMiddleware::new(provider_ws.clone(), wallet);
-    let client = Arc::new(client);
+    let client = SignerMiddleware::new(provider.clone(), wallet);
     let arbitrage_contract = Flashloan::new(
         "0x52415ffd6d6f604224fe0FbBA2395fFBa10C1F7D"
             .parse::<Address>()
             .unwrap(),
-        client,
+        Arc::new(client),
     );
 
     println!("DETECTING ARBITRAGE");
-
-    let mut stream = provider_ws.subscribe_blocks().await?;
+    let mut stream = provider.subscribe_blocks().await.unwrap();
     while let Some(block) = stream.next().await {
-        let block_number = provider_ws.get_block_number().await;
+        let block_number = provider.get_block_number().await;
         match block_number {
             Ok(num) => {
                 if num != block.number.unwrap() {
@@ -158,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 fees: fees,
                             };
                             // 20% markup on gas
-                            let mut val = provider_ws.clone().get_gas_price().await.unwrap();
+                            let mut val = provider.get_gas_price().await.unwrap();
                             val = val.checked_mul(U256::from(120)).unwrap();
                             val = val.checked_div(U256::from(100)).unwrap();
                             match arbitrage_contract
@@ -189,6 +179,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Err(_) => {}
             };
         }
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+    let args = Args::parse();
+
+    let routes = vec![
+        vec![USDC, WETH, USDC],
+        vec![USDC, WMATIC, USDC],
+        vec![USDT, WETH, USDT],
+        vec![USDT, WMATIC, USDT],
+        vec![DAI, WETH, DAI],
+        vec![DAI, WMATIC, DAI],
+        // vec![WMATIC, USDC, WMATIC],
+        // vec![WMATIC, DAI, WMATIC],
+        // vec![WMATIC, USDT, WMATIC],
+        // vec![WMATIC, WETH, WMATIC],
+        // vec![WETH, USDC, WETH],
+        // vec![WETH, DAI, WETH],
+        // vec![WETH, USDT, WETH],
+        // vec![WETH, WMATIC, WETH],
+    ];
+
+    if args.use_ipc {
+        println!("USING IPC!");
+        let provider_ipc = Provider::connect_ipc("/mountdrive/.bor/data/bor.ipc").await?;
+        let provider_ipc = Arc::new(provider_ipc);
+        run_loop(
+            provider_ipc,
+            Provider::connect_ipc("/mountdrive/.bor/data/bor.ipc").await?,
+            routes,
+        )
+        .await;
+    } else {
+        println!("USING ALCHEMY WS!");
+        let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
+        let provider_ws = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
+        run_loop(
+            provider_ws,
+            Provider::<Ws>::connect(&rpc_node_ws_url).await?,
+            routes,
+        )
+        .await;
     }
 
     Ok(())

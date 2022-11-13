@@ -1,3 +1,4 @@
+pub mod algos;
 pub mod constants;
 pub mod event_monitor;
 pub mod uniswapV2;
