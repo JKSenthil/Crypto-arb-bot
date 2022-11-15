@@ -8,7 +8,6 @@ use ethers::{
 };
 use futures_util::StreamExt;
 use std::{sync::Arc, time::Instant};
-use tokio::task::JoinHandle;
 
 use tsuki::{
     constants::{
@@ -29,14 +28,51 @@ struct Args {
 }
 
 #[inline(always)]
-fn threshold(token: ERC20Token, amount_diff: f64) -> bool {
+fn threshold(token: ERC20Token, amount_diff: U256) -> bool {
     match token {
-        USDC => amount_diff >= 0.02,
-        USDT => amount_diff >= 0.02,
-        DAI => amount_diff >= 0.02,
-        WMATIC => amount_diff >= 0.02,
-        WETH => amount_diff >= 0.00005,
+        USDC => amount_diff >= U256::from(10000),
+        USDT => amount_diff >= U256::from(10000),
+        DAI => amount_diff >= U256::from(1) * U256::exp10((DAI.get_decimals() - 2) as usize),
+        // WMATIC => amount_diff >= 0.02,
+        // WETH => amount_diff >= 0.00005,
         _ => false,
+    }
+}
+
+fn construct_arb_params(
+    amount_in: U256,
+    token_path: &Vec<ERC20Token>,
+    protocol_route: &Vec<Protocol>,
+) -> ArbParams {
+    let token_path = token_path.iter().map(|x| x.get_address()).collect();
+    let mut protocol_path = Vec::with_capacity(protocol_route.len());
+    let mut protocol_types = Vec::with_capacity(protocol_route.len());
+    let mut fees = Vec::with_capacity(protocol_route.len());
+    for protocol in protocol_route {
+        match protocol {
+            Protocol::UniswapV2(p) => {
+                protocol_path.push(p.get_router_address());
+                protocol_types.push(0);
+                fees.push(0);
+            }
+            Protocol::UniswapV3 { fee } => {
+                protocol_path.push(
+                    "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+                        .parse::<Address>()
+                        .unwrap(),
+                );
+                protocol_types.push(1);
+                fees.push(*fee);
+            }
+        };
+    }
+
+    ArbParams {
+        amount_in: amount_in,
+        token_path: token_path,
+        protocol_path: protocol_path,
+        protocol_types: protocol_types,
+        fees: fees,
     }
 }
 
@@ -57,7 +93,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     let ws = Arc::new(ws);
     tokio::spawn(ws.clone().listen_and_update_uniswapV2());
 
-    let amount_in = U256::from(3000);
+    let amount_in = U256::from(30);
 
     let wallet = std::env::var("PRIVATE_KEY")
         .unwrap()
@@ -66,7 +102,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         .with_chain_id(137u64);
     let client = SignerMiddleware::new(provider.clone(), wallet);
     let arbitrage_contract = Flashloan::new(
-        "0x52415ffd6d6f604224fe0FbBA2395fFBa10C1F7D"
+        "0x7586b61cd07d3f7b1e701d0ab719f9feea4674af"
             .parse::<Address>()
             .unwrap(),
         Arc::new(client),
@@ -75,6 +111,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     println!("DETECTING ARBITRAGE");
     let mut stream = provider.subscribe_blocks().await.unwrap();
     while let Some(block) = stream.next().await {
+        let gas_price_future = provider.get_gas_price();
         let block_number = provider.get_block_number().await;
         match block_number {
             Ok(num) => {
@@ -89,6 +126,9 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
             }
         };
 
+        let mut gas_price = gas_price_future.await.unwrap();
+        // println!("gas price {:?}", gas_price);
+
         // when new block arrives, check arbitrage opportunity
         // let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
@@ -98,74 +138,43 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 amount_in * U256::exp10(route[0].get_decimals() as usize),
             )))
         }
+
         for (i, future) in futures.into_iter().enumerate() {
             let result = future.await;
             match result {
-                Ok((amount_out, protocol_route)) => {
+                Ok((est_amount_out, protocol_route)) => {
                     // println!("{}) time elasped: {:?}ms", i, now.elapsed().as_millis());
-                    let a = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
-                    if amount_out > a {
-                        let profit = amount_out - a;
-                        let profit = profit.as_u128() as f64;
+                    let amount_in = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
+                    if est_amount_out > amount_in {
+                        let profit = est_amount_out - amount_in;
+                        // let profit =
+                        //     (profit.as_u128() as f64) / (routes[i][0].get_decimals() as f64);
                         if threshold(routes[i][0], profit) {
                             println!(
-                                "Sending txn..., expected profit: {:?}, amount_out: {:?}",
-                                profit, amount_out
+                                "Sending txn..., expected profit: {:?}, est_amount_out: {:?}",
+                                profit, est_amount_out
                             );
 
-                            // send transaction order
-                            let tp = routes[i]
-                                .clone()
-                                .into_iter()
-                                .map(|x| x.get_address())
-                                .collect();
-                            let mut pp = Vec::with_capacity(protocol_route.len());
-                            let mut pt = Vec::with_capacity(protocol_route.len());
-                            let mut fees = Vec::with_capacity(protocol_route.len());
-                            for protocol in &protocol_route {
-                                match protocol {
-                                    Protocol::UniswapV2(p) => {
-                                        pp.push(p.get_router_address());
-                                        pt.push(0);
-                                        fees.push(0);
-                                    }
-                                    Protocol::UniswapV3 { fee } => {
-                                        pp.push(
-                                            "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-                                                .parse::<Address>()
-                                                .unwrap(),
-                                        );
-                                        pt.push(1);
-                                        fees.push(*fee);
-                                    }
-                                };
-                            }
-                            let params = ArbParams {
-                                amount_in: a,
-                                token_path: tp,
-                                protocol_path: pp,
-                                protocol_types: pt,
-                                fees: fees,
-                            };
-                            // 20% markup on gas
-                            let mut val = provider.get_gas_price().await.unwrap();
-                            val = val.checked_mul(U256::from(120)).unwrap();
-                            val = val.checked_div(U256::from(100)).unwrap();
+                            let params =
+                                construct_arb_params(amount_in, &routes[i], &protocol_route);
+
+                            // 20% markup on gas price
+                            gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
+                            gas_price = gas_price.checked_div(U256::from(100)).unwrap();
                             match arbitrage_contract
                                 .execute_arbitrage(params)
-                                .gas_price(val)
+                                .gas_price(gas_price)
                                 .send()
                                 .await
                             {
                                 Ok(pending_txn) => {
-                                    println!("  Txn submitted: {}", pending_txn.tx_hash());
+                                    println!("  Txn submitted: {:?}", pending_txn.tx_hash());
                                 }
-                                Err(e) => println!("    Err received: {}", e),
+                                Err(_) => println!("  Err received"),
                             }
 
                             println!(
-                                "({i}), block_hash: {:?}, {:?}",
-                                block.hash.unwrap(),
+                                "({i}), {:?}",
                                 protocol_route.into_iter().map(|x| match x {
                                     Protocol::UniswapV2(v) => v.get_name().to_string(),
                                     Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
@@ -192,6 +201,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![USDC, WMATIC, USDC],
         vec![USDT, WETH, USDT],
         vec![USDT, WMATIC, USDT],
+        // vec![USDC, USDT, USDC],
+        // vec![USDC, DAI, USDC],
+        // vec![USDT, USDC, USDT],
+        // vec![USDT, DAI, USDT],
+        // vec![DAI, USDC, DAI],
+        // vec![DAI, USDT, DAI],
         vec![DAI, WETH, DAI],
         vec![DAI, WMATIC, DAI],
         // vec![WMATIC, USDC, WMATIC],
