@@ -14,6 +14,7 @@ use tsuki::{
         protocol::UniswapV2::{self},
         token::ERC20Token::{self, *},
     },
+    utils::price_conversion::amount_to_U256,
     world::{Protocol, WorldState},
 };
 
@@ -25,6 +26,7 @@ struct Args {
     /// use ipc (if running on node)
     #[arg(short, long)]
     use_ipc: bool,
+    // amount_in:
 }
 
 #[inline(always)]
@@ -32,9 +34,9 @@ fn threshold(token: ERC20Token, amount_diff: U256) -> bool {
     match token {
         USDC => amount_diff >= U256::from(10000),
         USDT => amount_diff >= U256::from(10000),
-        DAI => amount_diff >= U256::from(1) * U256::exp10((DAI.get_decimals() - 2) as usize),
-        // WMATIC => amount_diff >= 0.02,
-        // WETH => amount_diff >= 0.00005,
+        DAI => amount_diff >= amount_to_U256(0.01, 2, DAI),
+        WMATIC => amount_diff >= amount_to_U256(0.01, 2, WMATIC),
+        WETH => amount_diff >= amount_to_U256(0.00005, 5, WETH),
         _ => false,
     }
 }
@@ -149,6 +151,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         let profit = est_amount_out - amount_in;
                         // let profit =
                         //     (profit.as_u128() as f64) / (routes[i][0].get_decimals() as f64);
+                        println!("potential opporutinity found");
                         if threshold(routes[i][0], profit) {
                             println!(
                                 "Sending txn..., expected profit: {:?}, est_amount_out: {:?}",
@@ -201,14 +204,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![USDC, WMATIC, USDC],
         vec![USDT, WETH, USDT],
         vec![USDT, WMATIC, USDT],
+        vec![DAI, WETH, DAI],
+        vec![DAI, WMATIC, DAI],
         // vec![USDC, USDT, USDC],
         // vec![USDC, DAI, USDC],
         // vec![USDT, USDC, USDT],
         // vec![USDT, DAI, USDT],
         // vec![DAI, USDC, DAI],
         // vec![DAI, USDT, DAI],
-        vec![DAI, WETH, DAI],
-        vec![DAI, WMATIC, DAI],
+
         // vec![WMATIC, USDC, WMATIC],
         // vec![WMATIC, DAI, WMATIC],
         // vec![WMATIC, USDT, WMATIC],
