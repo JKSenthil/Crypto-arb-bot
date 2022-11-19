@@ -187,7 +187,8 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
                 match contract_call.gas_price(gas_price).send().await {
                     Ok(pending_txn) => {
-                        info!("  Txn submitted: {:?}", pending_txn.tx_hash());
+                        let _ = pending_txn.confirmations(1).await;
+                        info!("  Txn submitted");
                     }
                     Err(_) => {
                         error!("  Err received in sending txn");
