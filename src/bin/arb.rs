@@ -7,7 +7,7 @@ use ethers::{
     types::{Address, U256},
 };
 use futures_util::StreamExt;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use std::{sync::Arc, time::Instant};
 
 use tsuki::{
@@ -113,9 +113,8 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     info!("Setup complete. Detected arbitrage opportunities...");
     let mut stream = provider.subscribe_blocks().await.unwrap();
     while let Some(block) = stream.next().await {
-        let gas_price_future = provider.get_gas_price();
-        let block_number = provider.get_block_number().await;
-        match block_number {
+        // ensure latest block
+        match provider.get_block_number().await {
             Ok(num) => {
                 if num != block.number.unwrap() {
                     info!("skipping to latest block");
@@ -123,17 +122,17 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 }
             }
             Err(e) => {
-                warn!("error {:?} in retrieving block number, skipping...", e);
+                error!("error {:?} in retrieving block number, skipping...", e);
                 continue;
             }
         };
 
-        let gas_price = gas_price_future.await.unwrap();
+        let gas_price = provider.get_gas_price().await.unwrap();
 
-        // when new block arrives, check arbitrage opportunity
         let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
+            // check arb opportunity on each route
             futures.push(tokio::spawn(ws.clone().compute_best_route(
                 route.to_vec(),
                 amount_in * U256::exp10(route[0].get_decimals() as usize),
@@ -141,48 +140,42 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         }
 
         for (i, future) in futures.into_iter().enumerate() {
-            let result = future.await;
-            match result {
-                Ok((est_amount_out, protocol_route)) => {
-                    let amount_in = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
-                    if est_amount_out > amount_in {
-                        let profit = est_amount_out - amount_in;
-                        if threshold(routes[i][0], profit) {
-                            info!("Sending txn..., expected profit: {:?}", profit);
+            let (est_amount_out, protocol_route) = future.await.unwrap_or_default();
+            let amount_in = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
+            if est_amount_out > amount_in {
+                let profit = est_amount_out - amount_in;
+                if threshold(routes[i][0], profit) {
+                    info!("Sending txn..., expected profit: {:?}", profit);
 
-                            let params =
-                                construct_arb_params(amount_in, &routes[i], &protocol_route);
+                    let params = construct_arb_params(amount_in, &routes[i], &protocol_route);
 
-                            // 20% markup on gas price
-                            // gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
-                            // gas_price = gas_price.checked_div(U256::from(100)).unwrap();
-                            // arbitrage_contract.execute_arbitrage(params).estimate_gas();
-                            match arbitrage_contract
-                                .execute_arbitrage(params)
-                                .gas_price(gas_price)
-                                .send()
-                                .await
-                            {
-                                Ok(pending_txn) => {
-                                    info!("  Txn submitted: {:?}", pending_txn.tx_hash());
-                                }
-                                Err(_) => error!("  Err received"),
-                            }
-
-                            info!(
-                                "  ({i}), {:?}",
-                                protocol_route.into_iter().map(|x| match x {
-                                    Protocol::UniswapV2(v) => v.get_name().to_string(),
-                                    Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
-                                }),
-                            );
-
-                            break;
+                    // 20% markup on gas price
+                    // gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
+                    // gas_price = gas_price.checked_div(U256::from(100)).unwrap();
+                    // arbitrage_contract.execute_arbitrage(params).estimate_gas();
+                    match arbitrage_contract
+                        .execute_arbitrage(params)
+                        .gas_price(gas_price)
+                        .send()
+                        .await
+                    {
+                        Ok(pending_txn) => {
+                            info!("  Txn submitted: {:?}", pending_txn.tx_hash());
                         }
+                        Err(_) => error!("  Err received"),
                     }
+
+                    info!(
+                        "  ({i}), {:?}",
+                        protocol_route.into_iter().map(|x| match x {
+                            Protocol::UniswapV2(v) => v.get_name().to_string(),
+                            Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
+                        }),
+                    );
+
+                    break;
                 }
-                Err(_) => {}
-            };
+            }
         }
         debug!("Time elasped: {:?}ms", now.elapsed().as_millis());
     }
@@ -201,30 +194,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![USDT, WMATIC, USDT],
         vec![DAI, WETH, DAI],
         vec![DAI, WMATIC, DAI],
-        // vec![USDC, USDT, USDC],
-        // vec![USDC, DAI, USDC],
-        // vec![USDT, USDC, USDT],
-        // vec![USDT, DAI, USDT],
-        // vec![DAI, USDC, DAI],
-        // vec![DAI, USDT, DAI],
-
-        // vec![WMATIC, USDC, WMATIC],
-        // vec![WMATIC, DAI, WMATIC],
-        // vec![WMATIC, USDT, WMATIC],
-        // vec![WMATIC, WETH, WMATIC],
-        // vec![WETH, USDC, WETH],
-        // vec![WETH, DAI, WETH],
-        // vec![WETH, USDT, WETH],
-        // vec![WETH, WMATIC, WETH],
     ];
 
     if args.use_ipc {
         info!("Using IPC");
-        let provider_ipc = Provider::connect_ipc("~/.bor/data/bor.ipc").await?;
+        let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
         let provider_ipc = Arc::new(provider_ipc);
         run_loop(
             provider_ipc,
-            Provider::connect_ipc("~/.bor/data/bor.ipc").await?,
+            Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?,
             routes,
         )
         .await;
