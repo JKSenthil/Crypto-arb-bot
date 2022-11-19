@@ -41,6 +41,19 @@ fn threshold(token: ERC20Token, amount_diff: U256) -> bool {
     }
 }
 
+#[inline(always)]
+fn is_profitable(token: ERC20Token, profit: U256, txn_fees: U256) -> bool {
+    // normalize profit to 18 decimals for ease of comparison
+    let profit = profit * U256::exp10((18 - token.get_decimals()).into());
+    // assume 1 MATIC = $0.90
+    let txn_fee_usd = txn_fees
+        .checked_mul(U256::from(90))
+        .unwrap()
+        .checked_div(U256::from(100))
+        .unwrap();
+    profit > txn_fee_usd
+}
+
 fn construct_arb_params(
     amount_in: U256,
     token_path: &Vec<ERC20Token>,
@@ -95,7 +108,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     let ws = Arc::new(ws);
     tokio::spawn(ws.clone().listen_and_update_uniswapV2());
 
-    let amount_in = U256::from(30);
+    let amount_in = U256::from(25);
 
     let wallet = std::env::var("PRIVATE_KEY")
         .unwrap()
@@ -127,12 +140,10 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
             }
         };
 
-        let gas_price = provider.get_gas_price().await.unwrap();
-
         let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
-            // check arb opportunity on each route
+            // calc arb opportunity on each route
             futures.push(tokio::spawn(ws.clone().compute_best_route(
                 route.to_vec(),
                 amount_in * U256::exp10(route[0].get_decimals() as usize),
@@ -140,41 +151,57 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         }
 
         for (i, future) in futures.into_iter().enumerate() {
+            let token = routes[i][0];
             let (est_amount_out, protocol_route) = future.await.unwrap_or_default();
-            let amount_in = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
+            let amount_in = amount_in * U256::exp10(token.get_decimals() as usize);
             if est_amount_out > amount_in {
                 let profit = est_amount_out - amount_in;
-                if threshold(routes[i][0], profit) {
-                    info!("Sending txn..., expected profit: {:?}", profit);
-
-                    let params = construct_arb_params(amount_in, &routes[i], &protocol_route);
-
-                    // 20% markup on gas price
-                    // gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
-                    // gas_price = gas_price.checked_div(U256::from(100)).unwrap();
-                    // arbitrage_contract.execute_arbitrage(params).estimate_gas();
-                    match arbitrage_contract
-                        .execute_arbitrage(params)
-                        .gas_price(gas_price)
-                        .send()
-                        .await
-                    {
-                        Ok(pending_txn) => {
-                            info!("  Txn submitted: {:?}", pending_txn.tx_hash());
-                        }
-                        Err(_) => error!("  Err received"),
-                    }
-
-                    info!(
-                        "  ({i}), {:?}",
-                        protocol_route.into_iter().map(|x| match x {
-                            Protocol::UniswapV2(v) => v.get_name().to_string(),
-                            Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
-                        }),
-                    );
-
-                    break;
+                // ensure profit minimum threshold is met
+                if !threshold(token, profit) {
+                    continue;
                 }
+
+                let params = construct_arb_params(amount_in, &routes[i], &protocol_route);
+
+                let est_gas_usage: U256;
+                let contract_call = arbitrage_contract.execute_arbitrage(params);
+                match contract_call.estimate_gas().await {
+                    Ok(usage) => est_gas_usage = usage,
+                    Err(_) => {
+                        error!("  Err received in estimating gas");
+                        continue;
+                    }
+                };
+
+                // 20% markup on gas price
+                let mut gas_price = provider.get_gas_price().await.unwrap();
+                gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
+                gas_price = gas_price.checked_div(U256::from(100)).unwrap();
+
+                let txn_fees = gas_price * est_gas_usage;
+
+                if !is_profitable(token, profit, txn_fees) {
+                    debug!("  Arb not profitable");
+                    continue;
+                }
+
+                match contract_call.gas_price(gas_price).send().await {
+                    Ok(pending_txn) => {
+                        info!("  Txn submitted: {:?}", pending_txn.tx_hash());
+                    }
+                    Err(_) => error!("  Err received in sending txn"),
+                }
+
+                info!("  Sending txn..., expected profit: {:?}", profit);
+                info!(
+                    "  ({i}), {:?}",
+                    protocol_route.into_iter().map(|x| match x {
+                        Protocol::UniswapV2(v) => v.get_name().to_string(),
+                        Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
+                    }),
+                );
+
+                break;
             }
         }
         debug!("Time elasped: {:?}ms", now.elapsed().as_millis());
