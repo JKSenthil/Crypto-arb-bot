@@ -192,7 +192,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     Err(_) => error!("  Err received in sending txn"),
                 }
 
-                info!("  Sending txn..., expected profit: {:?}", profit);
+                info!("  expected profit: {:?}", profit);
                 info!(
                     "  ({i}), {:?}",
                     protocol_route.into_iter().map(|x| match x {
