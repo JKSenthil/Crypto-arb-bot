@@ -7,6 +7,8 @@ pub fn amount_to_U256(amount: f64, decimal: i32, token: ERC20Token) -> U256 {
     U256::from(amount) * U256::exp10((token.get_decimals() - (decimal as u8)) as usize)
 }
 
+// pub fn compute_txn_fee(gas_price: U256)
+
 #[cfg(test)]
 mod tests {
     use ethers::types::U256;

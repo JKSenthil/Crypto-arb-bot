@@ -7,6 +7,7 @@ use ethers::{
     types::{Address, U256},
 };
 use futures_util::StreamExt;
+use log::{debug, error, info, warn};
 use std::{sync::Arc, time::Instant};
 
 use tsuki::{
@@ -14,7 +15,7 @@ use tsuki::{
         protocol::UniswapV2::{self},
         token::ERC20Token::{self, *},
     },
-    utils::price_conversion::amount_to_U256,
+    utils::price_utils::amount_to_U256,
     world::{Protocol, WorldState},
 };
 
@@ -26,7 +27,6 @@ struct Args {
     /// use ipc (if running on node)
     #[arg(short, long)]
     use_ipc: bool,
-    // amount_in:
 }
 
 #[inline(always)]
@@ -110,7 +110,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         Arc::new(client),
     );
 
-    println!("DETECTING ARBITRAGE");
+    info!("Setup complete. Detected arbitrage opportunities...");
     let mut stream = provider.subscribe_blocks().await.unwrap();
     while let Some(block) = stream.next().await {
         let gas_price_future = provider.get_gas_price();
@@ -118,21 +118,20 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         match block_number {
             Ok(num) => {
                 if num != block.number.unwrap() {
-                    println!("skipping to latest block");
+                    info!("skipping to latest block");
                     continue;
                 }
             }
             Err(e) => {
-                println!("error {:?} in retrieving block number, skipping...", e);
+                warn!("error {:?} in retrieving block number, skipping...", e);
                 continue;
             }
         };
 
-        let mut gas_price = gas_price_future.await.unwrap();
-        // println!("gas price {:?}", gas_price);
+        let gas_price = gas_price_future.await.unwrap();
 
         // when new block arrives, check arbitrage opportunity
-        // let now = Instant::now();
+        let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             futures.push(tokio::spawn(ws.clone().compute_best_route(
@@ -145,25 +144,19 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
             let result = future.await;
             match result {
                 Ok((est_amount_out, protocol_route)) => {
-                    // println!("{}) time elasped: {:?}ms", i, now.elapsed().as_millis());
                     let amount_in = amount_in * U256::exp10(routes[i][0].get_decimals() as usize);
                     if est_amount_out > amount_in {
                         let profit = est_amount_out - amount_in;
-                        // let profit =
-                        //     (profit.as_u128() as f64) / (routes[i][0].get_decimals() as f64);
-                        println!("potential opporutinity found");
                         if threshold(routes[i][0], profit) {
-                            println!(
-                                "Sending txn..., expected profit: {:?}, est_amount_out: {:?}",
-                                profit, est_amount_out
-                            );
+                            info!("Sending txn..., expected profit: {:?}", profit);
 
                             let params =
                                 construct_arb_params(amount_in, &routes[i], &protocol_route);
 
                             // 20% markup on gas price
-                            gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
-                            gas_price = gas_price.checked_div(U256::from(100)).unwrap();
+                            // gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
+                            // gas_price = gas_price.checked_div(U256::from(100)).unwrap();
+                            // arbitrage_contract.execute_arbitrage(params).estimate_gas();
                             match arbitrage_contract
                                 .execute_arbitrage(params)
                                 .gas_price(gas_price)
@@ -171,13 +164,13 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                                 .await
                             {
                                 Ok(pending_txn) => {
-                                    println!("  Txn submitted: {:?}", pending_txn.tx_hash());
+                                    info!("  Txn submitted: {:?}", pending_txn.tx_hash());
                                 }
-                                Err(_) => println!("  Err received"),
+                                Err(_) => error!("  Err received"),
                             }
 
-                            println!(
-                                "({i}), {:?}",
+                            info!(
+                                "  ({i}), {:?}",
                                 protocol_route.into_iter().map(|x| match x {
                                     Protocol::UniswapV2(v) => v.get_name().to_string(),
                                     Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
@@ -191,12 +184,14 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 Err(_) => {}
             };
         }
+        debug!("Time elasped: {:?}ms", now.elapsed().as_millis());
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
+    env_logger::init();
     let args = Args::parse();
 
     let routes = vec![
@@ -224,17 +219,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     if args.use_ipc {
-        println!("USING IPC!");
-        let provider_ipc = Provider::connect_ipc("/mountdrive/.bor/data/bor.ipc").await?;
+        info!("Using IPC");
+        let provider_ipc = Provider::connect_ipc("~/.bor/data/bor.ipc").await?;
         let provider_ipc = Arc::new(provider_ipc);
         run_loop(
             provider_ipc,
-            Provider::connect_ipc("/mountdrive/.bor/data/bor.ipc").await?,
+            Provider::connect_ipc("~/.bor/data/bor.ipc").await?,
             routes,
         )
         .await;
     } else {
-        println!("USING ALCHEMY WS!");
+        info!("Using Alchemy");
         let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
         let provider_ws = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
         run_loop(
