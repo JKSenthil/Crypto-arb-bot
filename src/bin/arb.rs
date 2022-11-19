@@ -195,10 +195,13 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 info!("  expected profit: {:?}", profit);
                 info!(
                     "  ({i}), {:?}",
-                    protocol_route.into_iter().map(|x| match x {
-                        Protocol::UniswapV2(v) => v.get_name().to_string(),
-                        Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
-                    }),
+                    protocol_route
+                        .into_iter()
+                        .map(|x| match x {
+                            Protocol::UniswapV2(v) => v.get_name().to_string(),
+                            Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
+                        })
+                        .collect::<Vec<String>>(),
                 );
 
                 break;
