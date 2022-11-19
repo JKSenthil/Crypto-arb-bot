@@ -189,7 +189,10 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     Ok(pending_txn) => {
                         info!("  Txn submitted: {:?}", pending_txn.tx_hash());
                     }
-                    Err(_) => error!("  Err received in sending txn"),
+                    Err(_) => {
+                        error!("  Err received in sending txn");
+                        continue;
+                    }
                 }
 
                 info!("  expected profit: {:?}", profit);
@@ -198,8 +201,8 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     protocol_route
                         .into_iter()
                         .map(|x| match x {
-                            Protocol::UniswapV2(v) => v.get_name().to_string() + ",",
-                            Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee},"),
+                            Protocol::UniswapV2(v) => v.get_name().to_string(),
+                            Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
                         })
                         .collect::<Vec<String>>(),
                 );
