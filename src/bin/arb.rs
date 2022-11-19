@@ -173,9 +173,9 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     }
                 };
 
-                // 20% markup on gas price
+                // 30% markup on gas price
                 let mut gas_price = provider.get_gas_price().await.unwrap();
-                gas_price = gas_price.checked_mul(U256::from(120)).unwrap();
+                gas_price = gas_price.checked_mul(U256::from(130)).unwrap();
                 gas_price = gas_price.checked_div(U256::from(100)).unwrap();
 
                 let txn_fees = gas_price * est_gas_usage;
