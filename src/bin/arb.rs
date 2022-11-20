@@ -29,6 +29,11 @@ struct Args {
     use_ipc: bool,
 }
 
+struct Route {
+    amount_in: U256,
+    token_path: Vec<ERC20Token>,
+}
+
 #[inline(always)]
 fn threshold(token: ERC20Token, amount_diff: U256) -> bool {
     match token {
@@ -94,7 +99,7 @@ fn construct_arb_params(
 async fn run_loop<P: PubsubClient + Clone + 'static>(
     provider: Arc<Provider<P>>,
     stream_provider: Provider<P>,
-    routes: Vec<Vec<ERC20Token>>,
+    routes: Vec<Route>,
 ) {
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
     let ws = WorldState::init(
@@ -107,8 +112,6 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
     let ws = Arc::new(ws);
     tokio::spawn(ws.clone().listen_and_update_uniswapV2());
-
-    let amount_in = U256::from(25);
 
     let wallet = std::env::var("PRIVATE_KEY")
         .unwrap()
@@ -144,16 +147,16 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             // calc arb opportunity on each route
-            futures.push(tokio::spawn(ws.clone().compute_best_route(
-                route.to_vec(),
-                amount_in * U256::exp10(route[0].get_decimals() as usize),
-            )))
+            futures.push(tokio::spawn(
+                ws.clone()
+                    .compute_best_route(route.token_path.to_vec(), route.amount_in),
+            ))
         }
 
         for (i, future) in futures.into_iter().enumerate() {
-            let token = routes[i][0];
+            let token = routes[i].token_path[0];
             let (est_amount_out, protocol_route) = future.await.unwrap_or_default();
-            let amount_in = amount_in * U256::exp10(token.get_decimals() as usize);
+            let amount_in = routes[i].amount_in;
             if est_amount_out > amount_in {
                 let profit = est_amount_out - amount_in;
                 // ensure profit minimum threshold is met
@@ -161,7 +164,8 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     continue;
                 }
 
-                let params = construct_arb_params(amount_in, &routes[i], &protocol_route);
+                let params =
+                    construct_arb_params(amount_in, &routes[i].token_path, &protocol_route);
 
                 let est_gas_usage: U256;
                 let contract_call = arbitrage_contract.execute_arbitrage(params);
@@ -222,12 +226,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let routes = vec![
-        vec![USDC, WETH, USDC],
-        vec![USDC, WMATIC, USDC],
-        vec![USDT, WETH, USDT],
-        vec![USDT, WMATIC, USDT],
-        vec![DAI, WETH, DAI],
-        vec![DAI, WMATIC, DAI],
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WETH, USDC],
+        },
+        Route {
+            amount_in: U256::from(300) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WETH, USDC],
+        },
+        Route {
+            amount_in: U256::from(3000) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WETH, USDC],
+        },
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WMATIC, USDC],
+        },
+        Route {
+            amount_in: U256::from(300) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WMATIC, USDC],
+        },
+        Route {
+            amount_in: U256::from(3000) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WMATIC, USDC],
+        },
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WETH, USDT],
+        },
+        Route {
+            amount_in: U256::from(300) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WETH, USDT],
+        },
+        Route {
+            amount_in: U256::from(3000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WETH, USDT],
+        },
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WMATIC, USDT],
+        },
+        Route {
+            amount_in: U256::from(300) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WMATIC, USDT],
+        },
+        Route {
+            amount_in: U256::from(3000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WMATIC, USDT],
+        },
+        Route {
+            amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
+            token_path: vec![DAI, WETH, DAI],
+        },
+        Route {
+            amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
+            token_path: vec![DAI, WMATIC, DAI],
+        },
     ];
 
     if args.use_ipc {
