@@ -2,7 +2,7 @@ use enum_map::{enum_map, Enum, EnumMap};
 use ethers::types::Address;
 use lazy_static::lazy_static;
 
-#[derive(Debug, Enum, Clone, Copy)]
+#[derive(Debug, Enum, Clone, Copy, PartialEq)]
 pub enum ERC20Token {
     USDC,
     USDT,
@@ -88,6 +88,15 @@ impl ERC20Token {
     pub fn get_decimals(self) -> u8 {
         ERC20_MAPPING[self].decimals
     }
+}
+
+pub fn ERC20Lookup(address: Address) -> ERC20Token {
+    for (token, token_data) in ERC20_MAPPING.iter() {
+        if address == token_data.address {
+            return token;
+        }
+    }
+    return ERC20Token::USDC; // TODO: default return value change this
 }
 
 #[cfg(test)]

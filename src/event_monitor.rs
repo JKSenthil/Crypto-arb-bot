@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use ethers::{
-    providers::{Middleware, Provider, PubsubClient, SubscriptionStream, Ws},
+    providers::{Middleware, Provider, PubsubClient, SubscriptionStream},
     types::{Address, Log, H256},
     utils::{self, keccak256},
 };
@@ -46,11 +44,9 @@ mod tests {
     use std::str::FromStr;
 
     use ethers::abi::parse_abi;
-    use ethers::contract::EthLogDecode;
     use ethers::prelude::BaseContract;
     use ethers::types::H256;
     use ethers::{
-        abi::AbiDecode,
         providers::{Provider, Ws},
         types::{Address, Bytes, U256},
     };

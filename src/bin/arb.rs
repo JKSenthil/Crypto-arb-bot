@@ -12,7 +12,10 @@ use std::{sync::Arc, time::Instant};
 
 use tsuki::{
     constants::{
-        protocol::UniswapV2::{self},
+        protocol::{
+            UniswapV2::{self},
+            UNISWAP_V3,
+        },
         token::ERC20Token::{self, *},
     },
     utils::price_utils::amount_to_U256,
@@ -76,11 +79,7 @@ fn construct_arb_params(
                 fees.push(0);
             }
             Protocol::UniswapV3 { fee } => {
-                protocol_path.push(
-                    "0xE592427A0AEce92De3Edee1F18E0157C05861564"
-                        .parse::<Address>()
-                        .unwrap(),
-                );
+                protocol_path.push(UNISWAP_V3.router_address);
                 protocol_types.push(1);
                 fees.push(*fee);
             }

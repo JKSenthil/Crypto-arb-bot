@@ -23,12 +23,12 @@ pub struct UniswapV3Data {
     pub factory_address: Address,
 }
 
-pub static UNISWAPV2_PROTOCOLS: [UniswapV2; 4] = [
+pub static UNISWAPV2_PROTOCOLS: [UniswapV2; 5] = [
     UniswapV2::SUSHISWAP,
     UniswapV2::QUICKSWAP,
     UniswapV2::POLYCAT,
     UniswapV2::APESWAP,
-    // UniswapV2::MESHSWAP,
+    UniswapV2::MESHSWAP,
 ];
 
 lazy_static! {
@@ -100,7 +100,7 @@ impl UniswapV2 {
             UniswapV2::QUICKSWAP,
             UniswapV2::POLYCAT,
             UniswapV2::APESWAP,
-            // UniswapV2::MESHSWAP,
+            UniswapV2::MESHSWAP,
         ]
     }
 }

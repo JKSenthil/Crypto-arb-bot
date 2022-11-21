@@ -8,12 +8,16 @@ use ethers::{
     contract::Contract,
     core::abi::Abi,
     prelude::abigen,
-    providers::{Http, Middleware, Provider},
+    providers::Middleware,
     types::{Address, U256},
 };
+use log::{error, warn};
 
 use crate::{
-    constants::{protocol::UniswapV2, token::ERC20Token},
+    constants::{
+        protocol::UniswapV2,
+        token::{ERC20Lookup, ERC20Token},
+    },
     utils::multicall::Multicall,
 };
 
@@ -31,7 +35,6 @@ pub struct UniswapV2Pair {
     token1: ERC20Token,
     reserve0: U256,
     reserve1: U256,
-    fee: Option<u32>,
 }
 
 // TODO implement correct MeshSwap implementation?
@@ -43,7 +46,6 @@ impl UniswapV2Pair {
             token1: ERC20Token::USDC,
             reserve0: U256::zero(),
             reserve1: U256::zero(),
-            fee: None,
         }
     }
 
@@ -58,42 +60,25 @@ impl UniswapV2Pair {
         self.reserve1 = reserve1;
     }
 
-    // TODO clean up repetition code later
     fn get_amount_out(self, amount_in: U256, reserve_in: U256, reserve_out: U256) -> U256 {
         if reserve_in == U256::zero() || reserve_out == U256::zero() {
             return U256::zero();
         }
-        let amount = match self.protocol {
-            UniswapV2::MESHSWAP => {
-                let amount_in_with_fee: U256 = amount_in.mul(9990);
-                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
-                let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
-                numerator / denominator
-            }
-            UniswapV2::POLYCAT => {
-                let amount_in_with_fee: U256 = amount_in.mul(9976);
-                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
-                let denominator: U256 = reserve_in.mul(10000_u32).add(amount_in_with_fee);
-                numerator / denominator
-            }
-            UniswapV2::APESWAP => {
-                let amount_in_with_fee: U256 = amount_in.mul(998);
-                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
-                let denominator: U256 = reserve_in.mul(1000_u32).add(amount_in_with_fee);
-                numerator / denominator
-            }
-            _ => {
-                let amount_in_with_fee: U256 = amount_in.mul(997);
-                let numerator: U256 = amount_in_with_fee.mul(reserve_out);
-                let denominator: U256 = reserve_in.mul(1000_u32).add(amount_in_with_fee);
-                numerator / denominator
-            }
+        // account for each exchange's fees
+        let (numerator_fee_mul, denominator_fee_mul) = match self.protocol {
+            UniswapV2::MESHSWAP => (9990_u32, 10000_u32),
+            UniswapV2::POLYCAT => (9976_u32, 10000_u32),
+            UniswapV2::APESWAP => (998_u32, 1000_u32),
+            _ => (997_u32, 1000_u32),
         };
-        amount
+        let amount_in_with_fee: U256 = amount_in.mul(numerator_fee_mul);
+        let numerator: U256 = amount_in_with_fee.mul(reserve_out);
+        let denominator: U256 = reserve_in.mul(denominator_fee_mul).add(amount_in_with_fee);
+        numerator / denominator
     }
 
-    pub fn get_amounts_out(&self, amount_in: U256, token0: bool) -> U256 {
-        if token0 {
+    pub fn get_amounts_out(&self, amount_in: U256, token: ERC20Token) -> U256 {
+        if token == self.token0 {
             return self.get_amount_out(amount_in, self.reserve0, self.reserve1);
         }
         return self.get_amount_out(amount_in, self.reserve1, self.reserve0);
@@ -320,10 +305,73 @@ impl<M: Middleware> UniswapV2Client<M> {
         }
         return data;
     }
-}
 
-fn print_type_of<T>(_: &T) {
-    println!("{}", std::any::type_name::<T>())
+    pub async fn get_pair_metadata(&self, pair_address: Address) -> (ERC20Token, ERC20Token) {
+        let pair_contract = IUniswapV2Pair::new(pair_address, self.provider.clone());
+        let token_0_address = pair_contract.token_0().call().await.unwrap();
+        let token_1_address = pair_contract.token_1().call().await.unwrap();
+
+        (ERC20Lookup(token_0_address), ERC20Lookup(token_1_address))
+    }
+
+    pub async fn get_pair_metadata_multicall(
+        &self,
+        pair_addresses: &Vec<Address>,
+    ) -> Vec<(ERC20Token, ERC20Token)> {
+        let mut multicall0 = Multicall::new(self.provider.clone());
+        let mut multicall1 = Multicall::new(self.provider.clone());
+
+        for pair_address in pair_addresses {
+            let contract = IUniswapV2Pair::new(*pair_address, self.provider.clone());
+            let contract_call0 = contract.token_0();
+            let contract_call1 = contract.token_1();
+            multicall0.add_call(contract_call0);
+            multicall1.add_call(contract_call1);
+        }
+        let return_data0: Vec<Option<Vec<Token>>> = multicall0.call_raw().await;
+        let return_data1: Vec<Option<Vec<Token>>> = multicall1.call_raw().await;
+        let mut data: Vec<(ERC20Token, ERC20Token)> = Vec::new();
+        for (i, tokens0) in return_data0.into_iter().enumerate() {
+            let mut tuple = (ERC20Token::USDC, ERC20Token::USDC);
+            match &return_data1[i] {
+                Some(tokens) => {
+                    let token = &tokens[0];
+                    match token {
+                        Address(addr) => {
+                            tuple.1 = ERC20Lookup(*addr);
+                        }
+                        _ => {
+                            error!("error in parsing token in metadata multicall");
+                        }
+                    };
+                }
+                _ => {
+                    warn!(
+                        "error in getting token in metadata multicall, pair address: {:?}",
+                        pair_addresses[i]
+                    );
+                }
+            };
+            match &tokens0 {
+                Some(tokens) => {
+                    let token = &tokens[0];
+                    match token {
+                        Address(addr) => {
+                            tuple.0 = ERC20Lookup(*addr);
+                        }
+                        _ => {
+                            error!("error in parsing token in metadata multicall");
+                        }
+                    };
+                }
+                _ => {
+                    warn!("error in getting token in metadata multicall");
+                }
+            };
+            data.push(tuple);
+        }
+        return data;
+    }
 }
 
 #[cfg(test)]
@@ -331,7 +379,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::Arc;
 
-    use ethers::providers::{Http, Provider, Ws};
+    use ethers::providers::{Provider, Ws};
     use ethers::types::{Address, U256};
 
     use crate::constants::protocol::UniswapV2::*;
@@ -416,6 +464,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_pair_metadata_multicall() {
+        dotenv::dotenv().ok();
+        let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL").unwrap();
+
+        let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await.unwrap();
+        let provider_ws = Arc::new(provider_ws);
+
+        let uniswapV2_client = UniswapV2Client::new(provider_ws);
+        let pair_addresses = vec!["0x34965ba0ac2451a34a0471f04cca3f990b8dea27"
+            .parse::<Address>()
+            .unwrap()];
+        let result = uniswapV2_client
+            .get_pair_metadata_multicall(&pair_addresses)
+            .await;
+        println!(
+            "{:?}",
+            result
+                .into_iter()
+                .map(|x| (x.0.get_symbol(), x.1.get_symbol()))
+        );
+    }
+
+    #[tokio::test]
     async fn test_get_amount_out() {
         dotenv::dotenv().ok();
         let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL").unwrap();
@@ -424,30 +495,32 @@ mod tests {
         let provider_ws = Arc::new(provider_ws);
         let uniswapV2_client = UniswapV2Client::new(provider_ws);
 
-        let route = (SUSHISWAP, USDT, WMATIC);
+        let routes = [
+            (MESHSWAP, USDC, WETH),
+            (SUSHISWAP, USDC, WETH),
+            (APESWAP, USDC, WETH),
+            (POLYCAT, USDC, WETH),
+        ];
 
-        // load in pair and save reserve data
-        let amount_in = U256::from(1000) * U256::exp10(route.1.get_decimals().into());
-        println!("AMOUTN INT {:?}", amount_in);
-        let pair_address = uniswapV2_client
-            .get_pair_address(route.0, route.1, route.2)
-            .await;
-        let amount_out = uniswapV2_client
-            .quote(route.0, route.1, route.2, amount_in)
-            .await;
+        for route in routes {
+            let amount_in = U256::from(1000) * U256::exp10(route.1.get_decimals().into());
+            // load in pair and save reserve data
+            let pair_address = uniswapV2_client
+                .get_pair_address(route.0, route.1, route.2)
+                .await;
+            let amount_out = uniswapV2_client
+                .quote(route.0, route.1, route.2, amount_in)
+                .await;
 
-        let (reserve0, reserve1) = uniswapV2_client.get_pair_reserves(pair_address).await;
-        println!("{:?}", pair_address);
-        println!("{}, {}", reserve0, reserve1);
-        let reserve0 = U256::from(reserve0);
-        let reserve1 = U256::from(reserve1);
-        let mut pair = UniswapV2Pair::default();
-        pair.update_metadata(route.0, route.1, route.2);
-        pair.update_reserves(reserve0, reserve1);
-        let i_amount_out = pair.get_amounts_out(amount_in, false);
-        println!(
-            "Uniswap get_amounts_out: {}, internal get_amounts_out: {}",
-            amount_out, i_amount_out
-        );
+            let (reserve0, reserve1) = uniswapV2_client.get_pair_reserves(pair_address).await;
+            let reserve0 = U256::from(reserve0);
+            let reserve1 = U256::from(reserve1);
+            let mut pair = UniswapV2Pair::default();
+            let (token0, token1) = uniswapV2_client.get_pair_metadata(pair_address).await;
+            pair.update_metadata(route.0, token0, token1);
+            pair.update_reserves(reserve0, reserve1);
+            let i_amount_out = pair.get_amounts_out(amount_in, route.1);
+            assert_eq!(amount_out, i_amount_out);
+        }
     }
 }

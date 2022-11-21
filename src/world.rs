@@ -5,6 +5,7 @@ use ethers::{
     types::U256,
 };
 use futures_util::StreamExt;
+use log::debug;
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
@@ -26,10 +27,10 @@ pub enum Protocol {
 }
 
 #[inline(always)]
-fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Token, bool) {
+fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Token) {
     match token0.get_address().cmp(&token1.get_address()) {
-        Ordering::Less => (token0, token1, true),
-        _ => (token1, token0, false),
+        Ordering::Less => (token0, token1),
+        _ => (token1, token0),
     }
 }
 
@@ -71,6 +72,10 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
             .get_pair_address_multicall(pair_address_multicall_input)
             .await;
 
+        let pair_metadatas = uniswapV2_client
+            .get_pair_metadata_multicall(&pair_addresses)
+            .await;
+
         // grab all reserves for pair addresses
         let pair_reserves = uniswapV2_client
             .get_pair_reserves_multicall(&pair_addresses)
@@ -90,14 +95,15 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
         let mut curr_idx = 0;
         for protocol in &uniswapV2_list {
             for i in 0..tokens_list.len() {
-                let token0 = tokens_list[i];
+                let token0_ord = tokens_list[i];
                 for j in (i + 1)..tokens_list.len() {
-                    let token1 = tokens_list[j];
+                    let token1_ord = tokens_list[j];
                     let reserve0 = pair_reserves[curr_idx].0;
                     let reserve1 = pair_reserves[curr_idx].1;
-                    matrix[(*protocol as usize, token0 as usize, token1 as usize)]
+                    let (token0, token1) = pair_metadatas[curr_idx];
+                    matrix[(*protocol as usize, token0_ord as usize, token1_ord as usize)]
                         .update_metadata(*protocol, token0, token1);
-                    matrix[(*protocol as usize, token0 as usize, token1 as usize)]
+                    matrix[(*protocol as usize, token0_ord as usize, token1_ord as usize)]
                         .update_reserves(reserve0, reserve1);
                     pair_lookup.insert(pair_addresses[curr_idx], (*protocol, token0, token1));
                     curr_idx += 1;
@@ -131,17 +137,18 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
                 .decode_event("Sync", log.topics, log.data)
                 .unwrap();
             let (protocol, token0, token1) = self.uniswapV2_pair_lookup[&log.address];
+            // TODO need to sort tokens here (for proper indexing, since token0<=token1 not guarenteed for Meshswap)
             self.uniswapV2_markets.write().await
                 [(protocol as usize, token0 as usize, token1 as usize)]
                 .update_reserves(reserve0, reserve1);
-            // println!(
-            //     "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
-            //     log.transaction_hash.unwrap(),
-            //     log.block_number.unwrap(),
-            //     protocol.get_name(),
-            //     token0.get_symbol(),
-            //     token1.get_symbol()
-            // );
+            debug!(
+                "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
+                log.transaction_hash.unwrap(),
+                log.block_number.unwrap(),
+                protocol.get_name(),
+                token0.get_symbol(),
+                token1.get_symbol()
+            );
         }
     }
 
@@ -181,18 +188,18 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
         token_out: ERC20Token,
         amount_in: U256,
     ) -> (U256, UniswapV2) {
-        let (token0, token1, is_same_order) = order_tokens(token_in, token_out);
+        let (token0, token1) = order_tokens(token_in, token_out);
 
         let mut best_protocol = UNISWAPV2_PROTOCOLS[0];
         let mut best_amount_out = self.uniswapV2_markets.read().await
             [(best_protocol as usize, token0 as usize, token1 as usize)]
-            .get_amounts_out(amount_in, is_same_order);
+            .get_amounts_out(amount_in, token_in);
 
         for i in 1..UNISWAPV2_PROTOCOLS.len() {
             let protocol = UNISWAPV2_PROTOCOLS[i];
             let amount_out = self.uniswapV2_markets.read().await
                 [(protocol as usize, token0 as usize, token1 as usize)]
-                .get_amounts_out(amount_in, is_same_order);
+                .get_amounts_out(amount_in, token_in);
 
             if amount_out > best_amount_out {
                 best_protocol = protocol;
