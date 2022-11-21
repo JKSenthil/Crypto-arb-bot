@@ -100,9 +100,9 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
                     let token1_ord = tokens_list[j];
                     let reserve0 = pair_reserves[curr_idx].0;
                     let reserve1 = pair_reserves[curr_idx].1;
-                    let (token0, token1) = pair_metadatas[curr_idx];
+                    let (token0, token1, fees) = pair_metadatas[curr_idx];
                     matrix[(*protocol as usize, token0_ord as usize, token1_ord as usize)]
-                        .update_metadata(*protocol, token0, token1);
+                        .update_metadata(*protocol, token0, token1, fees);
                     matrix[(*protocol as usize, token0_ord as usize, token1_ord as usize)]
                         .update_reserves(reserve0, reserve1);
                     pair_lookup.insert(pair_addresses[curr_idx], (*protocol, token0, token1));
@@ -138,12 +138,12 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
                 .unwrap();
             let (protocol, token0, token1) = self.uniswapV2_pair_lookup[&log.address];
             // TODO need to sort tokens here (for proper indexing, since token0<=token1 not guarenteed for Meshswap)
+            let (token0, token1) = order_tokens(token0, token1);
             self.uniswapV2_markets.write().await
                 [(protocol as usize, token0 as usize, token1 as usize)]
                 .update_reserves(reserve0, reserve1);
             debug!(
-                "Transaction Hash: {:?} --- Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
-                log.transaction_hash.unwrap(),
+                "Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
                 log.block_number.unwrap(),
                 protocol.get_name(),
                 token0.get_symbol(),

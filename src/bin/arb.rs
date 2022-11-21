@@ -125,7 +125,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         Arc::new(client),
     );
 
-    info!("Setup complete. Detected arbitrage opportunities...");
+    info!("Setup complete. Detecting arbitrage opportunities...");
     let mut stream = provider.subscribe_blocks().await.unwrap();
     while let Some(block) = stream.next().await {
         // ensure latest block
@@ -142,7 +142,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
             }
         };
 
-        let now = Instant::now();
+        // let now = Instant::now();
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             // calc arb opportunity on each route
@@ -194,7 +194,18 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         info!("  Txn submitted");
                     }
                     Err(_) => {
-                        error!("  Err received in sending txn");
+                        error!(
+                            "  Err received in sending txn. Expected profit: {:?}, Route: {:?}){:?}",
+                            profit,
+                            i,
+                            protocol_route
+                                .into_iter()
+                                .map(|x| match x {
+                                    Protocol::UniswapV2(v) => v.get_name().to_string(),
+                                    Protocol::UniswapV3 { fee } => format!("UniswapV3 {fee}"),
+                                })
+                                .collect::<Vec<String>>()
+                        );
                         continue;
                     }
                 }
@@ -214,7 +225,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 break;
             }
         }
-        debug!("Time elasped: {:?}ms", now.elapsed().as_millis());
+        // debug!("Time elasped: {:?}ms", now.elapsed().as_millis());
     }
 }
 
@@ -226,51 +237,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let routes = vec![
         Route {
-            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
+            amount_in: U256::from(1000) * U256::exp10(USDC.get_decimals().into()),
             token_path: vec![USDC, WETH, USDC],
+        },
+        Route {
+            amount_in: U256::from(1000) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WMATIC, USDC],
+        },
+        Route {
+            amount_in: U256::from(1000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WETH, USDT],
+        },
+        Route {
+            amount_in: U256::from(1000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WMATIC, USDT],
         },
         Route {
             amount_in: U256::from(300) * U256::exp10(USDC.get_decimals().into()),
             token_path: vec![USDC, WETH, USDC],
         },
         Route {
-            amount_in: U256::from(3000) * U256::exp10(USDC.get_decimals().into()),
-            token_path: vec![USDC, WETH, USDC],
-        },
-        Route {
-            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
-            token_path: vec![USDC, WMATIC, USDC],
-        },
-        Route {
             amount_in: U256::from(300) * U256::exp10(USDC.get_decimals().into()),
             token_path: vec![USDC, WMATIC, USDC],
         },
         Route {
-            amount_in: U256::from(3000) * U256::exp10(USDC.get_decimals().into()),
-            token_path: vec![USDC, WMATIC, USDC],
-        },
-        Route {
-            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
-            token_path: vec![USDT, WETH, USDT],
-        },
-        Route {
             amount_in: U256::from(300) * U256::exp10(USDT.get_decimals().into()),
             token_path: vec![USDT, WETH, USDT],
         },
         Route {
-            amount_in: U256::from(3000) * U256::exp10(USDT.get_decimals().into()),
-            token_path: vec![USDT, WETH, USDT],
-        },
-        Route {
-            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
-            token_path: vec![USDT, WMATIC, USDT],
-        },
-        Route {
             amount_in: U256::from(300) * U256::exp10(USDT.get_decimals().into()),
-            token_path: vec![USDT, WMATIC, USDT],
-        },
-        Route {
-            amount_in: U256::from(3000) * U256::exp10(USDT.get_decimals().into()),
             token_path: vec![USDT, WMATIC, USDT],
         },
         Route {
@@ -280,6 +275,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Route {
             amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
             token_path: vec![DAI, WMATIC, DAI],
+        },
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WETH, USDC],
+        },
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WMATIC, USDC],
+        },
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WETH, USDT],
+        },
+        Route {
+            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WMATIC, USDT],
         },
     ];
 

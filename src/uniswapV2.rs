@@ -11,7 +11,7 @@ use ethers::{
     providers::Middleware,
     types::{Address, U256},
 };
-use log::{error, warn};
+use log::{debug, error, warn};
 
 use crate::{
     constants::{
@@ -35,6 +35,7 @@ pub struct UniswapV2Pair {
     token1: ERC20Token,
     reserve0: U256,
     reserve1: U256,
+    fees: U256,
 }
 
 // TODO implement correct MeshSwap implementation?
@@ -46,13 +47,21 @@ impl UniswapV2Pair {
             token1: ERC20Token::USDC,
             reserve0: U256::zero(),
             reserve1: U256::zero(),
+            fees: U256::zero(),
         }
     }
 
-    pub fn update_metadata(&mut self, protocol: UniswapV2, token0: ERC20Token, token1: ERC20Token) {
+    pub fn update_metadata(
+        &mut self,
+        protocol: UniswapV2,
+        token0: ERC20Token,
+        token1: ERC20Token,
+        fees: U256,
+    ) {
         self.protocol = protocol;
         self.token0 = token0;
         self.token1 = token1;
+        self.fees = fees;
     }
 
     pub fn update_reserves(&mut self, reserve0: U256, reserve1: U256) {
@@ -66,7 +75,7 @@ impl UniswapV2Pair {
         }
         // account for each exchange's fees
         let (numerator_fee_mul, denominator_fee_mul) = match self.protocol {
-            UniswapV2::MESHSWAP => (9990_u32, 10000_u32),
+            UniswapV2::MESHSWAP => (10000 - self.fees.as_u32(), 10000_u32),
             UniswapV2::POLYCAT => (9976_u32, 10000_u32),
             UniswapV2::APESWAP => (998_u32, 1000_u32),
             _ => (997_u32, 1000_u32),
@@ -306,33 +315,41 @@ impl<M: Middleware> UniswapV2Client<M> {
         return data;
     }
 
-    pub async fn get_pair_metadata(&self, pair_address: Address) -> (ERC20Token, ERC20Token) {
+    pub async fn get_pair_metadata(&self, pair_address: Address) -> (ERC20Token, ERC20Token, U256) {
         let pair_contract = IUniswapV2Pair::new(pair_address, self.provider.clone());
         let token_0_address = pair_contract.token_0().call().await.unwrap();
         let token_1_address = pair_contract.token_1().call().await.unwrap();
-
-        (ERC20Lookup(token_0_address), ERC20Lookup(token_1_address))
+        let fees = pair_contract.fee().call().await.unwrap_or(U256::zero());
+        (
+            ERC20Lookup(token_0_address),
+            ERC20Lookup(token_1_address),
+            fees,
+        )
     }
 
     pub async fn get_pair_metadata_multicall(
         &self,
         pair_addresses: &Vec<Address>,
-    ) -> Vec<(ERC20Token, ERC20Token)> {
+    ) -> Vec<(ERC20Token, ERC20Token, U256)> {
         let mut multicall0 = Multicall::new(self.provider.clone());
         let mut multicall1 = Multicall::new(self.provider.clone());
+        let mut multicall_fees = Multicall::new(self.provider.clone());
 
         for pair_address in pair_addresses {
             let contract = IUniswapV2Pair::new(*pair_address, self.provider.clone());
             let contract_call0 = contract.token_0();
             let contract_call1 = contract.token_1();
+            let contract_call_fee = contract.fee();
             multicall0.add_call(contract_call0);
             multicall1.add_call(contract_call1);
+            multicall_fees.add_call(contract_call_fee);
         }
         let return_data0: Vec<Option<Vec<Token>>> = multicall0.call_raw().await;
         let return_data1: Vec<Option<Vec<Token>>> = multicall1.call_raw().await;
-        let mut data: Vec<(ERC20Token, ERC20Token)> = Vec::new();
+        let return_data_fee: Vec<Option<Vec<Token>>> = multicall_fees.call_raw().await;
+        let mut data: Vec<(ERC20Token, ERC20Token, U256)> = Vec::new();
         for (i, tokens0) in return_data0.into_iter().enumerate() {
-            let mut tuple = (ERC20Token::USDC, ERC20Token::USDC);
+            let mut tuple = (ERC20Token::USDC, ERC20Token::USDC, U256::zero());
             match &return_data1[i] {
                 Some(tokens) => {
                     let token = &tokens[0];
@@ -368,6 +385,20 @@ impl<M: Middleware> UniswapV2Client<M> {
                     warn!("error in getting token in metadata multicall");
                 }
             };
+
+            match &return_data_fee[i] {
+                Some(tokens) => {
+                    let token = &tokens[0];
+                    match token {
+                        Uint(num) => {
+                            debug!("FEE%: {:?}", *num);
+                            tuple.2 = *num;
+                        }
+                        _ => {}
+                    }
+                }
+                None => {}
+            }
             data.push(tuple);
         }
         return data;
@@ -516,8 +547,8 @@ mod tests {
             let reserve0 = U256::from(reserve0);
             let reserve1 = U256::from(reserve1);
             let mut pair = UniswapV2Pair::default();
-            let (token0, token1) = uniswapV2_client.get_pair_metadata(pair_address).await;
-            pair.update_metadata(route.0, token0, token1);
+            let (token0, token1, fees) = uniswapV2_client.get_pair_metadata(pair_address).await;
+            pair.update_metadata(route.0, token0, token1, fees);
             pair.update_reserves(reserve0, reserve1);
             let i_amount_out = pair.get_amounts_out(amount_in, route.1);
             assert_eq!(amount_out, i_amount_out);
