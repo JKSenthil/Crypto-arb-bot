@@ -166,15 +166,15 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 let params =
                     construct_arb_params(amount_in, &routes[i].token_path, &protocol_route);
 
-                let est_gas_usage: U256;
+                let est_gas_usage: U256 = U256::from(342401);
                 let contract_call = arbitrage_contract.execute_arbitrage(params);
-                match contract_call.estimate_gas().await {
-                    Ok(usage) => est_gas_usage = usage,
-                    Err(_) => {
-                        error!("  Err received in estimating gas");
-                        continue;
-                    }
-                };
+                // match contract_call.estimate_gas().await {
+                //     Ok(usage) => est_gas_usage = usage,
+                //     Err(_) => {
+                //         error!("  Err received in estimating gas");
+                //         continue;
+                //     }
+                // };
 
                 // 30% markup on gas price
                 let mut gas_price = provider.get_gas_price().await.unwrap();
