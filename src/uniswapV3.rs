@@ -100,7 +100,7 @@ impl<M: Middleware + Clone> UniswapV3Client<M> {
         token_out: ERC20Token,
         amount_in: U256,
     ) -> (u32, U256) {
-        let fees: [u32; 4] = [100, 500, 3000, 10000];
+        let fees: [u32; 2] = [500, 3000];
         let mut multicall = Multicall::new(self.provider.clone());
 
         for fee in fees {
@@ -121,11 +121,11 @@ impl<M: Middleware + Clone> UniswapV3Client<M> {
         }
 
         let return_data = multicall.call_raw().await;
-        let mut amount_outs: [(u32, U256); 4] = [
+        let mut amount_outs: [(u32, U256); 2] = [
             (fees[0], U256::zero()),
             (fees[1], U256::zero()),
-            (fees[2], U256::zero()),
-            (fees[3], U256::zero()),
+            // (fees[2], U256::zero()),
+            // (fees[3], U256::zero()),
         ];
 
         for (i, token) in return_data.iter().enumerate() {
