@@ -178,7 +178,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
                 // 30% markup on gas price
                 let mut gas_price = provider.get_gas_price().await.unwrap();
-                gas_price = gas_price.checked_mul(U256::from(200)).unwrap();
+                gas_price = gas_price.checked_mul(U256::from(300)).unwrap();
                 gas_price = gas_price.checked_div(U256::from(100)).unwrap();
 
                 let txn_fees = gas_price * est_gas_usage;
@@ -210,7 +210,11 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     }
                 }
 
-                info!("  expected profit: {:?}", profit);
+                info!(
+                    "  expected profit: {:?}, gas {:?}",
+                    profit,
+                    gas_price.checked_div(U256::exp10(12)).unwrap()
+                );
                 info!(
                     "  ({i}), {:?}",
                     protocol_route
