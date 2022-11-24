@@ -53,9 +53,9 @@ fn threshold(token: ERC20Token, amount_diff: U256) -> bool {
 fn is_profitable(token: ERC20Token, profit: U256, txn_fees: U256) -> bool {
     // normalize profit to 18 decimals for ease of comparison
     let profit = profit * U256::exp10((18 - token.get_decimals()).into());
-    // assume 1 MATIC = $0.90
+    // assume 1 MATIC = $0.85
     let txn_fee_usd = txn_fees
-        .checked_mul(U256::from(90))
+        .checked_mul(U256::from(85))
         .unwrap()
         .checked_div(U256::from(100))
         .unwrap();
@@ -127,22 +127,9 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
     info!("Setup complete. Detecting arbitrage opportunities...");
     let mut stream = provider.subscribe_blocks().await.unwrap();
-    while let Some(block) = stream.next().await {
-        // ensure latest block
-        match provider.get_block_number().await {
-            Ok(num) => {
-                if num != block.number.unwrap() {
-                    info!("skipping to latest block");
-                    continue;
-                }
-            }
-            Err(e) => {
-                error!("error {:?} in retrieving block number, skipping...", e);
-                continue;
-            }
-        };
-
+    while let Some(_) = stream.next().await {
         let now = Instant::now();
+
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             // calc arb opportunity on each route
@@ -166,19 +153,19 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 let params =
                     construct_arb_params(amount_in, &routes[i].token_path, &protocol_route);
 
-                let est_gas_usage: U256 = U256::from(342401);
+                let est_gas_usage: U256;
                 let contract_call = arbitrage_contract.execute_arbitrage(params);
-                // match contract_call.estimate_gas().await {
-                //     Ok(usage) => est_gas_usage = usage,
-                //     Err(_) => {
-                //         error!("  Err received in estimating gas");
-                //         continue;
-                //     }
-                // };
+                match contract_call.estimate_gas().await {
+                    Ok(usage) => est_gas_usage = usage,
+                    Err(_) => {
+                        error!("  Err received in estimating gas");
+                        continue;
+                    }
+                };
 
-                // 30% markup on gas price
+                // 45% markup on gas price
                 let mut gas_price = provider.get_gas_price().await.unwrap();
-                gas_price = gas_price.checked_mul(U256::from(300)).unwrap();
+                gas_price = gas_price.checked_mul(U256::from(145)).unwrap();
                 gas_price = gas_price.checked_div(U256::from(100)).unwrap();
 
                 let txn_fees = gas_price * est_gas_usage;
