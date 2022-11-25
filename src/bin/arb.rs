@@ -126,10 +126,12 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     );
 
     info!("Setup complete. Detecting arbitrage opportunities...");
-    loop {
+    let mut block_stream = provider.subscribe_blocks().await.unwrap();
+    while let Some(block) = block_stream.next().await {
         let now = Instant::now();
+        let gas_price = provider.get_gas_price().await.unwrap();
+        debug!("gas price time: {:?}", gas_price);
 
-        let gas_price = *ws.gas_price.read().await;
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             // calc arb opportunity on each route

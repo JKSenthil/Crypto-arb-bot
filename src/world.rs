@@ -127,7 +127,7 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
     where
         <M as Middleware>::Provider: PubsubClient,
     {
-        let mut block_stream = self.provider.subscribe_blocks().await.unwrap().fuse();
+        // let mut block_stream = self.provider.subscribe_blocks().await.unwrap().fuse();
 
         let mut pair_stream = get_pair_sync_stream(
             &self.stream_provider,
@@ -141,11 +141,11 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
 
         loop {
             futures_util::select! {
-                _ = block_stream.next() => {
-                    let mut gas_price = self.gas_price.write().await;
-                    *gas_price = self.provider.get_gas_price().await.unwrap();
-                    debug!("gas price: {:?}", gas_price);
-                },
+                // _ = block_stream.next() => {
+                //     let mut gas_price = self.gas_price.write().await;
+                //     *gas_price = self.provider.get_gas_price().await.unwrap();
+                //     debug!("gas price: {:?}", gas_price);
+                // },
                 logs = pair_stream.next() => {
                     let log = logs.unwrap();
                     let (reserve0, reserve1): (U256, U256) = pair_sync_abi
