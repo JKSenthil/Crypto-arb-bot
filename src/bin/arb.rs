@@ -130,6 +130,9 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     while let Some(block) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
+        // 200% markup on gas price
+        let mut bumped_gas_price = gas_price.checked_mul(U256::from(200)).unwrap();
+        bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
         debug!(
             "gas price time: {:?}ms, price: {:?}",
             now.elapsed().as_millis(),
@@ -160,9 +163,6 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     construct_arb_params(amount_in, &routes[i].token_path, &protocol_route);
 
                 let est_gas_usage = U256::from(500000);
-                // 45% markup on gas price
-                let mut bumped_gas_price = gas_price.checked_mul(U256::from(145)).unwrap();
-                bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
 
                 let txn_fees = bumped_gas_price * est_gas_usage;
                 if !is_profitable(token, profit, txn_fees) {
