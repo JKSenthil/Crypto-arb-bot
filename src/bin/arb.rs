@@ -110,7 +110,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     .await;
 
     let ws = Arc::new(ws);
-    tokio::spawn(ws.clone().listen_and_update_uniswapV2());
+    tokio::spawn(ws.clone().stream_data());
 
     let wallet = std::env::var("PRIVATE_KEY")
         .unwrap()
@@ -126,10 +126,10 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     );
 
     info!("Setup complete. Detecting arbitrage opportunities...");
-    let mut stream = provider.subscribe_blocks().await.unwrap();
-    while let Some(_) = stream.next().await {
+    loop {
         let now = Instant::now();
 
+        let gas_price = *ws.gas_price.read().await;
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
             // calc arb opportunity on each route
@@ -153,32 +153,19 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 let params =
                     construct_arb_params(amount_in, &routes[i].token_path, &protocol_route);
 
-                let est_gas_usage: U256;
-                let contract_call = arbitrage_contract.execute_arbitrage(params);
-                let now2 = Instant::now();
-                match contract_call.estimate_gas().await {
-                    Ok(usage) => est_gas_usage = usage,
-                    Err(_) => {
-                        error!("  Err received in estimating gas");
-                        error!(" TIME TAKEN: {:?}ms", now2.elapsed().as_millis());
-                        continue;
-                    }
-                };
-                error!(" TIME TAKEN: {:?}ms", now2.elapsed().as_millis());
-
+                let est_gas_usage = U256::from(500000);
                 // 45% markup on gas price
-                let mut gas_price = provider.get_gas_price().await.unwrap();
-                gas_price = gas_price.checked_mul(U256::from(145)).unwrap();
-                gas_price = gas_price.checked_div(U256::from(100)).unwrap();
+                let mut bumped_gas_price = gas_price.checked_mul(U256::from(145)).unwrap();
+                bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
 
-                let txn_fees = gas_price * est_gas_usage;
-
+                let txn_fees = bumped_gas_price * est_gas_usage;
                 if !is_profitable(token, profit, txn_fees) {
                     debug!("  Arb not profitable");
                     continue;
                 }
 
-                match contract_call.gas_price(gas_price).send().await {
+                let contract_call = arbitrage_contract.execute_arbitrage(params);
+                match contract_call.gas_price(bumped_gas_price).send().await {
                     Ok(pending_txn) => {
                         let _ = pending_txn.confirmations(1).await;
                         info!("  Txn submitted");

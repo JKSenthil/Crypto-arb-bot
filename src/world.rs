@@ -41,6 +41,7 @@ pub struct WorldState<M, P> {
     uniswapV2_pair_lookup: HashMap<Address, (UniswapV2, ERC20Token, ERC20Token)>,
     pub uniswapV2_pair_addresses: Vec<Address>,
     uniswapV3_client: UniswapV3Client<M>,
+    pub gas_price: RwLock<U256>,
 }
 
 impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
@@ -118,37 +119,53 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
             uniswapV2_pair_lookup: pair_lookup,
             uniswapV2_pair_addresses: pair_addresses,
             uniswapV3_client: UniswapV3Client::new(provider.clone()),
+            gas_price: RwLock::new(provider.get_gas_price().await.unwrap()),
         }
     }
 
-    pub async fn listen_and_update_uniswapV2(self: Arc<Self>) {
-        // get sync stream
-        let mut stream = get_pair_sync_stream(
+    pub async fn stream_data(self: Arc<Self>)
+    where
+        <M as Middleware>::Provider: PubsubClient,
+    {
+        let mut block_stream = self.provider.subscribe_blocks().await.unwrap().fuse();
+
+        let mut pair_stream = get_pair_sync_stream(
             &self.stream_provider,
             self.uniswapV2_pair_addresses.to_vec(),
         )
-        .await;
+        .await
+        .fuse();
         let pair_sync_abi = BaseContract::from(
             parse_abi(&["event Sync(uint112 reserve0, uint112 reserve1)"]).unwrap(),
         );
 
-        while let Some(log) = stream.next().await {
-            let (reserve0, reserve1): (U256, U256) = pair_sync_abi
-                .decode_event("Sync", log.topics, log.data)
-                .unwrap();
-            let (protocol, token0, token1) = self.uniswapV2_pair_lookup[&log.address];
-            // TODO need to sort tokens here (for proper indexing, since token0<=token1 not guarenteed for Meshswap)
-            let (token0, token1) = order_tokens(token0, token1);
-            self.uniswapV2_markets.write().await
-                [(protocol as usize, token0 as usize, token1 as usize)]
-                .update_reserves(reserve0, reserve1);
-            debug!(
-                "Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
-                log.block_number.unwrap(),
-                protocol.get_name(),
-                token0.get_symbol(),
-                token1.get_symbol()
-            );
+        loop {
+            futures_util::select! {
+                _ = block_stream.next() => {
+                    let mut gas_price = self.gas_price.write().await;
+                    *gas_price = self.provider.get_gas_price().await.unwrap();
+                    debug!("gas price: {:?}", gas_price);
+                },
+                logs = pair_stream.next() => {
+                    let log = logs.unwrap();
+                    let (reserve0, reserve1): (U256, U256) = pair_sync_abi
+                    .decode_event("Sync", log.topics, log.data)
+                    .unwrap();
+                    let (protocol, token0, token1) = self.uniswapV2_pair_lookup[&log.address];
+                    // need to sort tokens here (for proper indexing, since token0<=token1 not guarenteed for Meshswap)
+                    let (token0, token1) = order_tokens(token0, token1);
+                    self.uniswapV2_markets.write().await
+                        [(protocol as usize, token0 as usize, token1 as usize)]
+                        .update_reserves(reserve0, reserve1);
+                    debug!(
+                        "Block#:{}, Pair reserves updated on {:?} protocol, pair {}-{}",
+                        log.block_number.unwrap(),
+                        protocol.get_name(),
+                        token0.get_symbol(),
+                        token1.get_symbol()
+                    );
+                }
+            }
         }
     }
 
