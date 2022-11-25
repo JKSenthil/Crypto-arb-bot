@@ -130,7 +130,11 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     while let Some(block) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
-        debug!("gas price time: {:?}", gas_price);
+        debug!(
+            "gas price time: {:?}ms, price: {:?}",
+            now.elapsed().as_millis(),
+            gas_price
+        );
 
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
