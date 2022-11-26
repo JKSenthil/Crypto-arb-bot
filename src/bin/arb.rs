@@ -95,8 +95,9 @@ fn construct_arb_params(
     }
 }
 
-async fn run_loop<P: PubsubClient + Clone + 'static>(
+async fn run_loop<P: PubsubClient + Clone + 'static, M: Middleware + Clone>(
     provider: Arc<Provider<P>>,
+    txn_provider: Arc<M>,
     stream_provider: Provider<P>,
     routes: Vec<Route>,
 ) {
@@ -117,7 +118,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         .parse::<LocalWallet>()
         .unwrap()
         .with_chain_id(137u64);
-    let client = SignerMiddleware::new(provider.clone(), wallet);
+    let client = SignerMiddleware::new(txn_provider.clone(), wallet);
     let arbitrage_contract = Flashloan::new(
         "0x7586b61cd07d3f7b1e701d0ab719f9feea4674af"
             .parse::<Address>()
@@ -127,7 +128,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
     info!("Setup complete. Detecting arbitrage opportunities...");
     let mut block_stream = provider.subscribe_blocks().await.unwrap();
-    while let Some(block) = block_stream.next().await {
+    while let Some(_) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
         // 200% markup on gas price
@@ -277,22 +278,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     ];
 
+    let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
+    let alc_provider_ws = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
     if args.use_ipc {
         info!("Using IPC");
         let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
         let provider_ipc = Arc::new(provider_ipc);
         run_loop(
             provider_ipc,
+            alc_provider_ws,
             Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?,
             routes,
         )
         .await;
     } else {
         info!("Using Alchemy");
-        let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
-        let provider_ws = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
+
         run_loop(
-            provider_ws,
+            alc_provider_ws.clone(),
+            alc_provider_ws,
             Provider::<Ws>::connect(&rpc_node_ws_url).await?,
             routes,
         )
