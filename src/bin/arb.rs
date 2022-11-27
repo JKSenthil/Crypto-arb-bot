@@ -127,7 +127,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
     info!("Setup complete. Detecting arbitrage opportunities...");
     let mut block_stream = provider.subscribe_blocks().await.unwrap();
-    while let Some(_) = block_stream.next().await {
+    while let Some(block) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
         // 3% markup on gas price
@@ -174,7 +174,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 match contract_call.gas_price(gas_price).send().await {
                     Ok(pending_txn) => {
                         let _ = pending_txn.confirmations(1).await;
-                        info!("  Txn submitted");
+                        info!("  Txn submitted, curr block: {:?}", block.number.unwrap());
                     }
                     Err(_) => {
                         error!(
