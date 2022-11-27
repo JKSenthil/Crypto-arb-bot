@@ -95,9 +95,8 @@ fn construct_arb_params(
     }
 }
 
-async fn run_loop<P: PubsubClient + Clone + 'static, M: Middleware + Clone>(
+async fn run_loop<P: PubsubClient + Clone + 'static>(
     provider: Arc<Provider<P>>,
-    txn_provider: Arc<M>,
     stream_provider: Provider<P>,
     routes: Vec<Route>,
 ) {
@@ -118,7 +117,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static, M: Middleware + Clone>(
         .parse::<LocalWallet>()
         .unwrap()
         .with_chain_id(137u64);
-    let client = SignerMiddleware::new(txn_provider.clone(), wallet);
+    let client = SignerMiddleware::new(provider.clone(), wallet);
     let arbitrage_contract = Flashloan::new(
         "0x7586b61cd07d3f7b1e701d0ab719f9feea4674af"
             .parse::<Address>()
@@ -131,8 +130,8 @@ async fn run_loop<P: PubsubClient + Clone + 'static, M: Middleware + Clone>(
     while let Some(_) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
-        // 200% markup on gas price
-        let mut bumped_gas_price = gas_price.checked_mul(U256::from(200)).unwrap();
+        // 3% markup on gas price
+        let mut bumped_gas_price = gas_price.checked_mul(U256::from(103)).unwrap();
         bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
         debug!(
             "gas price time: {:?}ms, price: {:?}",
@@ -165,7 +164,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static, M: Middleware + Clone>(
 
                 let est_gas_usage = U256::from(500000);
 
-                let txn_fees = bumped_gas_price * est_gas_usage;
+                let txn_fees = bumped_gas_price.checked_mul(est_gas_usage).unwrap();
                 if !is_profitable(token, profit, txn_fees) {
                     debug!("  Arb not profitable");
                     continue;
@@ -286,7 +285,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let provider_ipc = Arc::new(provider_ipc);
         run_loop(
             provider_ipc,
-            alc_provider_ws,
             Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?,
             routes,
         )
@@ -296,7 +294,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         run_loop(
             alc_provider_ws.clone(),
-            alc_provider_ws,
             Provider::<Ws>::connect(&rpc_node_ws_url).await?,
             routes,
         )
