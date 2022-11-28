@@ -131,7 +131,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
         // 200% markup on gas price
-        let mut bumped_gas_price = gas_price.checked_mul(U256::from(200)).unwrap();
+        let mut bumped_gas_price = gas_price.checked_mul(U256::from(300)).unwrap();
         bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
         debug!(
             "gas price time: {:?}ms, price: {:?}",
