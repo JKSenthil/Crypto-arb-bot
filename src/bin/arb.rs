@@ -130,9 +130,9 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     while let Some(block) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
-        // 3% markup on gas price
-        // let mut bumped_gas_price = gas_price.checked_mul(U256::from(103)).unwrap();
-        // bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
+        // 200% markup on gas price
+        let mut bumped_gas_price = gas_price.checked_mul(U256::from(200)).unwrap();
+        bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
         debug!(
             "gas price time: {:?}ms, price: {:?}",
             now.elapsed().as_millis(),
@@ -164,14 +164,14 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
                 let est_gas_usage = U256::from(500000);
 
-                let txn_fees = gas_price.checked_mul(est_gas_usage).unwrap();
+                let txn_fees = bumped_gas_price.checked_mul(est_gas_usage).unwrap();
                 if !is_profitable(token, profit, txn_fees) {
                     debug!("  Arb not profitable");
                     continue;
                 }
 
                 let contract_call = arbitrage_contract.execute_arbitrage(params);
-                match contract_call.gas_price(gas_price).send().await {
+                match contract_call.gas_price(bumped_gas_price).send().await {
                     Ok(pending_txn) => {
                         let _ = pending_txn.confirmations(1).await;
                         info!("  Txn submitted, curr block: {:?}", block.number.unwrap());
