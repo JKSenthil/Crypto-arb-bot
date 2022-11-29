@@ -8,7 +8,7 @@ use ethers::{
 };
 use futures_util::StreamExt;
 use log::{debug, error, info};
-use std::{sync::Arc, time::Instant};
+use std::{process, sync::Arc, time::Instant};
 
 use tsuki::{
     constants::{
@@ -130,8 +130,8 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     while let Some(block) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
-        // 200% markup on gas price
-        let mut bumped_gas_price = gas_price.checked_mul(U256::from(300)).unwrap();
+        // 600% markup on gas price
+        let mut bumped_gas_price = gas_price.checked_mul(U256::from(600)).unwrap();
         bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
         debug!(
             "gas price time: {:?}ms, price: {:?}",
@@ -204,6 +204,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         })
                         .collect::<Vec<String>>(),
                 );
+                process::exit(1);
 
                 break;
             }

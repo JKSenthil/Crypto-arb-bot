@@ -35,7 +35,6 @@ fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Tok
 }
 
 pub struct WorldState<M, P> {
-    provider: Arc<M>,
     stream_provider: Provider<P>,
     uniswapV2_markets: RwLock<Matrix3D<UniswapV2Pair>>,
     uniswapV2_pair_lookup: HashMap<Address, (UniswapV2, ERC20Token, ERC20Token)>,
@@ -113,7 +112,6 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
         }
 
         WorldState {
-            provider: provider.clone(),
             stream_provider: stream_provider,
             uniswapV2_markets: RwLock::new(matrix),
             uniswapV2_pair_lookup: pair_lookup,
