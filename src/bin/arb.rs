@@ -127,11 +127,12 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
     info!("Setup complete. Detecting arbitrage opportunities...");
     let mut block_stream = provider.subscribe_blocks().await.unwrap();
+    let mut txn_count = 0;
     while let Some(block) = block_stream.next().await {
         let now = Instant::now();
         let gas_price = provider.get_gas_price().await.unwrap();
         // 600% markup on gas price
-        let mut bumped_gas_price = gas_price.checked_mul(U256::from(600)).unwrap();
+        let mut bumped_gas_price = gas_price.checked_mul(U256::from(700)).unwrap();
         bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
         debug!(
             "gas price time: {:?}ms, price: {:?}",
@@ -204,7 +205,10 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         })
                         .collect::<Vec<String>>(),
                 );
-                process::exit(1);
+                txn_count += 1;
+                if txn_count > 5 {
+                    process::exit(1);
+                }
 
                 break;
             }
