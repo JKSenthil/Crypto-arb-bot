@@ -33,6 +33,7 @@ impl<M: Middleware + Clone> TxPool<M> {
             .transactions_unordered(4) // what n is ideal?
             .fuse();
 
+        let mut last_txn_hash: H256 = H256::zero();
         loop {
             futures_util::select! {
                 block = block_stream.next() => {
@@ -50,8 +51,10 @@ impl<M: Middleware + Clone> TxPool<M> {
                     let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
                     let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
                     self.data.insert(pending_tx.hash, fee);
+                    last_txn_hash = pending_tx.hash;
                 }
             }
+            println!("Random txn hash: {:?}", last_txn_hash);
         }
     }
 }
