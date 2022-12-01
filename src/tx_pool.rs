@@ -1,6 +1,5 @@
 use std::{num::NonZeroUsize, sync::Arc, time::Instant};
 
-use dashmap::DashMap;
 use ethers::{
     providers::{Middleware, PubsubClient},
     types::{Block, H256, U256},
@@ -9,9 +8,9 @@ use futures_util::StreamExt;
 use lru::LruCache;
 use tokio::sync::RwLock;
 
+/// TODO measure perf & identify any potential issues
 pub struct TxPool<M> {
     provider: Arc<M>,
-    data: DashMap<H256, U256>,               // tx hash -> gas price
     lru_cache: RwLock<LruCache<H256, U256>>, // tx hash -> gas price
 }
 
@@ -19,9 +18,27 @@ impl<M: Middleware + Clone> TxPool<M> {
     pub fn init(provider: Arc<M>, capacity: usize) -> Self {
         TxPool {
             provider: provider.clone(),
-            data: DashMap::new(), // TODO use LRUCache instead
             lru_cache: RwLock::new(LruCache::new(NonZeroUsize::new(capacity).unwrap())),
         }
+    }
+
+    async fn retrieve_all_gas_prices(&self) -> Vec<U256> {
+        let lru_cache = self.lru_cache.read().await;
+        let mut gas_prices = Vec::with_capacity(lru_cache.len());
+        for (_, val) in lru_cache.iter() {
+            gas_prices.push(*val);
+        }
+        return gas_prices;
+    }
+
+    pub async fn get_90th_percentile_gas_price(&self) -> U256 {
+        let mut gas_prices = self.retrieve_all_gas_prices().await;
+        gas_prices.sort();
+        let mut idx = gas_prices.len();
+        idx *= 9000;
+        idx /= 10000;
+
+        return gas_prices[idx];
     }
 
     pub async fn stream_mempool(self: Arc<TxPool<M>>)
@@ -109,6 +126,10 @@ mod tests {
             println!(
                 "Pending txn count: {:?}",
                 txpool.lru_cache.read().await.len()
+            );
+            println!(
+                "90th percentile gas price: {:?}",
+                txpool.get_90th_percentile_gas_price().await
             );
         }
     }
