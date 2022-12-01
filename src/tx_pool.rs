@@ -37,6 +37,9 @@ impl<M: Middleware + Clone> TxPool<M> {
         let mut idx = gas_prices.len();
         idx *= 9000;
         idx /= 10000;
+        if gas_prices.len() > 10 {
+            idx = gas_prices.len() - 10;
+        }
 
         return gas_prices[idx];
     }
@@ -58,15 +61,15 @@ impl<M: Middleware + Clone> TxPool<M> {
             futures_util::select! {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
-                    let now = Instant::now();
+                    // let now = Instant::now();
                     let txns = self.provider.get_block(block.hash.unwrap()).await.unwrap().unwrap().transactions;
-                    println!("time elapsed: {:?}ms", now.elapsed().as_millis());
+                    // println!("time elapsed: {:?}ms", now.elapsed().as_millis());
 
                     let mut lru_cache = self.lru_cache.write().await;
                     for tx_hash in txns {
                         lru_cache.pop(&tx_hash);
                     }
-                    println!("Mempool txn count: {:?}", lru_cache.len());
+                    // println!("Mempool txn count: {:?}", lru_cache.len());
                 },
                 pending_tx = pending_tx_stream.next() => {
                     match pending_tx.unwrap() {

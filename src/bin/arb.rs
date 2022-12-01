@@ -18,6 +18,7 @@ use tsuki::{
         },
         token::ERC20Token::{self, *},
     },
+    tx_pool::TxPool,
     utils::price_utils::amount_to_U256,
     world::{Protocol, WorldState},
 };
@@ -101,6 +102,11 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     routes: Vec<Route>,
 ) {
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
+
+    let txpool = TxPool::init(provider.clone(), 1000);
+    let txpool = Arc::new(txpool);
+    tokio::spawn(txpool.clone().stream_mempool());
+
     let ws = WorldState::init(
         provider.clone(),
         stream_provider,
@@ -130,15 +136,6 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     let mut txn_count = 0;
     while let Some(block) = block_stream.next().await {
         let now = Instant::now();
-        let gas_price = provider.get_gas_price().await.unwrap();
-        // 600% markup on gas price
-        let mut bumped_gas_price = gas_price.checked_mul(U256::from(700)).unwrap();
-        bumped_gas_price = bumped_gas_price.checked_div(U256::from(100)).unwrap();
-        debug!(
-            "gas price time: {:?}ms, price: {:?}",
-            now.elapsed().as_millis(),
-            gas_price
-        );
 
         let mut futures = Vec::with_capacity(routes.len());
         for route in &routes {
@@ -164,15 +161,15 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     construct_arb_params(amount_in, &routes[i].token_path, &protocol_route);
 
                 let est_gas_usage = U256::from(500000);
-
-                let txn_fees = bumped_gas_price.checked_mul(est_gas_usage).unwrap();
+                let gas_price = txpool.get_90th_percentile_gas_price().await + U256::from(100);
+                let txn_fees = gas_price.checked_mul(est_gas_usage).unwrap();
                 if !is_profitable(token, profit, txn_fees) {
                     debug!("  Arb not profitable");
                     continue;
                 }
 
                 let contract_call = arbitrage_contract.execute_arbitrage(params);
-                match contract_call.gas_price(bumped_gas_price).send().await {
+                match contract_call.gas_price(gas_price).send().await {
                     Ok(pending_txn) => {
                         let _ = pending_txn.confirmations(1).await;
                         info!("  Txn submitted, curr block: {:?}", block.number.unwrap());
@@ -206,7 +203,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         .collect::<Vec<String>>(),
                 );
                 txn_count += 1;
-                if txn_count > 5 {
+                if txn_count > 4 {
                     process::exit(1);
                 }
 
