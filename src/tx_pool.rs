@@ -37,22 +37,26 @@ impl<M: Middleware + Clone> TxPool<M> {
             futures_util::select! {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
-                    let now = Instant::now();
+                    // let now = Instant::now();
                     let txns = self.provider.get_block(block.hash.unwrap()).await.unwrap().unwrap().transactions;
 
-                    println!("time elapsed: {:?}ms", now.elapsed().as_millis());
-                    println!("HOLDA: {:?}", txns.len());
+                    // println!("time elapsed: {:?}ms", now.elapsed().as_millis());
+                    // println!("HOLDA: {:?}", txns.len());
                     for tx_hash in txns {
                         self.data.remove(&tx_hash);
                     }
                     println!("Mempool txn count: {:?}", self.data.len());
                 },
                 pending_tx = pending_tx_stream.next() => {
-                    let pending_tx: Transaction = pending_tx.unwrap().unwrap();
-                    let gas_price = pending_tx.gas_price.unwrap_or(U256::zero());
-                    let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
-                    let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
-                    self.data.insert(pending_tx.hash, fee);
+                    match pending_tx.unwrap() {
+                        Ok(pending_tx) => {
+                            let gas_price = pending_tx.gas_price.unwrap_or(U256::zero());
+                            let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
+                            let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
+                            self.data.insert(pending_tx.hash, fee);
+                        },
+                        _ => {println!("ERR caught and handled");}
+                    };
                 }
             }
         }
