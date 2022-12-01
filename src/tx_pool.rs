@@ -38,12 +38,14 @@ impl<M: Middleware + Clone> TxPool<M> {
             futures_util::select! {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
+                    println!("txn count: {:?}", block.transactions.len());
                     for tx_hash in block.transactions {
                         if let Some(_) = self.data.remove(&tx_hash) {
                             println!("TXN removed!");
                         }
 
                     }
+                    println!("Random txn hash: {:?}", last_txn_hash);
                 },
                 pending_tx = pending_tx_stream.next() => {
                     let pending_tx: Transaction = pending_tx.unwrap().unwrap();
@@ -54,7 +56,6 @@ impl<M: Middleware + Clone> TxPool<M> {
                     last_txn_hash = pending_tx.hash;
                 }
             }
-            println!("Random txn hash: {:?}", last_txn_hash);
         }
     }
 }
