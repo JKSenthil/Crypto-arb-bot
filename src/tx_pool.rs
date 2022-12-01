@@ -38,11 +38,12 @@ impl<M: Middleware + Clone> TxPool<M> {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
                     let now = Instant::now();
-                    let txns = self.provider.get_block_with_txs(block.hash.unwrap()).await.unwrap().unwrap().transactions;
+                    let txns = self.provider.get_block(block.hash.unwrap()).await.unwrap().unwrap().transactions;
 
                     println!("time elapsed: {:?}ms", now.elapsed().as_millis());
+                    println!("HOLDA: {:?}", txns.len());
                     for tx_hash in txns {
-                        self.data.remove(&tx_hash.hash);
+                        self.data.remove(&tx_hash);
                     }
                     println!("Mempool txn count: {:?}", self.data.len());
                 },
@@ -77,6 +78,11 @@ mod tests {
         let txpool = TxPool::init(provider_ws.clone());
         let txpool = Arc::new(txpool);
         tokio::spawn(txpool.clone().stream_mempool());
+
+        let mut stream = provider_ws.subscribe_blocks().await.unwrap();
+        while let Some(_) = stream.next().await {
+            // println!("Pending txn count: {:?}", txpool.data.len());
+        }
     }
 
     #[tokio::test]
