@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use dashmap::DashMap;
 use ethers::{
@@ -38,9 +38,12 @@ impl<M: Middleware + Clone> TxPool<M> {
             futures_util::select! {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
-                    println!("txn count: {:?}", block.transactions.len());
-                    for tx_hash in block.transactions {
-                        if let Some(_) = self.data.remove(&tx_hash) {
+                    let now = Instant::now();
+                    let txns = self.provider.get_block_with_txs(block.hash.unwrap()).await.unwrap().unwrap().transactions;
+
+                    println!("txn count: {:?}, time elapsed: {:?}ms", txns.len(), now.elapsed().as_millis());
+                    for tx_hash in txns {
+                        if let Some(_) = self.data.remove(&tx_hash.hash) {
                             println!("TXN removed!");
                         }
 
