@@ -1,22 +1,26 @@
-use std::{sync::Arc, time::Instant};
+use std::{num::NonZeroUsize, sync::Arc, time::Instant};
 
 use dashmap::DashMap;
 use ethers::{
     providers::{Middleware, PubsubClient},
-    types::{Block, Transaction, H256, U256},
+    types::{Block, H256, U256},
 };
 use futures_util::StreamExt;
+use lru::LruCache;
+use tokio::sync::RwLock;
 
 pub struct TxPool<M> {
     provider: Arc<M>,
-    data: DashMap<H256, U256>, // tx hash -> gas price
+    data: DashMap<H256, U256>,               // tx hash -> gas price
+    lru_cache: RwLock<LruCache<H256, U256>>, // tx hash -> gas price
 }
 
 impl<M: Middleware + Clone> TxPool<M> {
-    pub fn init(provider: Arc<M>) -> Self {
+    pub fn init(provider: Arc<M>, capacity: usize) -> Self {
         TxPool {
             provider: provider.clone(),
-            data: DashMap::new(),
+            data: DashMap::new(), // TODO use LRUCache instead
+            lru_cache: RwLock::new(LruCache::new(NonZeroUsize::new(capacity).unwrap())),
         }
     }
 
@@ -30,22 +34,22 @@ impl<M: Middleware + Clone> TxPool<M> {
             .subscribe_pending_txs()
             .await
             .unwrap()
-            .transactions_unordered(4) // what n is ideal?
+            .transactions_unordered(16) // TODO: what n is ideal?
             .fuse();
 
         loop {
             futures_util::select! {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
-                    // let now = Instant::now();
+                    let now = Instant::now();
                     let txns = self.provider.get_block(block.hash.unwrap()).await.unwrap().unwrap().transactions;
+                    println!("time elapsed: {:?}ms", now.elapsed().as_millis());
 
-                    // println!("time elapsed: {:?}ms", now.elapsed().as_millis());
-                    // println!("HOLDA: {:?}", txns.len());
+                    let mut lru_cache = self.lru_cache.write().await;
                     for tx_hash in txns {
-                        self.data.remove(&tx_hash);
+                        lru_cache.pop(&tx_hash);
                     }
-                    println!("Mempool txn count: {:?}", self.data.len());
+                    println!("Mempool txn count: {:?}", lru_cache.len());
                 },
                 pending_tx = pending_tx_stream.next() => {
                     match pending_tx.unwrap() {
@@ -53,9 +57,9 @@ impl<M: Middleware + Clone> TxPool<M> {
                             let gas_price = pending_tx.gas_price.unwrap_or(U256::zero());
                             let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
                             let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
-                            self.data.insert(pending_tx.hash, fee);
+                            self.lru_cache.write().await.push(pending_tx.hash, fee);
                         },
-                        _ => {println!("ERR caught and handled");}
+                        _ => {}
                     };
                 }
             }
@@ -79,7 +83,7 @@ mod tests {
         let provider_ws = Provider::<Ws>::connect(&rpc_node_ws_url).await.unwrap();
         let provider_ws = Arc::new(provider_ws);
 
-        let txpool = TxPool::init(provider_ws.clone());
+        let txpool = TxPool::init(provider_ws.clone(), 1000);
         let txpool = Arc::new(txpool);
         tokio::spawn(txpool.clone().stream_mempool());
 
@@ -96,13 +100,16 @@ mod tests {
             .unwrap();
         let provider_ipc = Arc::new(provider_ipc);
 
-        let txpool = TxPool::init(provider_ipc.clone());
+        let txpool = TxPool::init(provider_ipc.clone(), 1000);
         let txpool = Arc::new(txpool);
         tokio::spawn(txpool.clone().stream_mempool());
 
         let mut stream = provider_ipc.subscribe_blocks().await.unwrap();
         while let Some(_) = stream.next().await {
-            println!("Pending txn count: {:?}", txpool.data.len());
+            println!(
+                "Pending txn count: {:?}",
+                txpool.lru_cache.read().await.len()
+            );
         }
     }
 }

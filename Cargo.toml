@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+lru = "0.8.1"
 log = "0.4.17"
 dotenv = "0.15.0"
 dashmap = "5.4.0"
