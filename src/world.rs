@@ -2,7 +2,7 @@ use ethers::{
     abi::{parse_abi, Address},
     prelude::BaseContract,
     providers::{Middleware, Provider, PubsubClient},
-    types::U256,
+    types::{Transaction, U256},
 };
 use futures_util::StreamExt;
 use log::debug;
@@ -35,6 +35,7 @@ fn order_tokens(token0: ERC20Token, token1: ERC20Token) -> (ERC20Token, ERC20Tok
 }
 
 pub struct WorldState<M, P> {
+    provider: Arc<M>,
     stream_provider: Provider<P>,
     uniswapV2_markets: RwLock<Matrix3D<UniswapV2Pair>>,
     uniswapV2_pair_lookup: HashMap<Address, (UniswapV2, ERC20Token, ERC20Token)>,
@@ -112,6 +113,7 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
         }
 
         WorldState {
+            provider: provider.clone(),
             stream_provider: stream_provider,
             uniswapV2_markets: RwLock::new(matrix),
             uniswapV2_pair_lookup: pair_lookup,
@@ -126,6 +128,7 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
         <M as Middleware>::Provider: PubsubClient,
     {
         // let mut block_stream = self.provider.subscribe_blocks().await.unwrap().fuse();
+        // let mut pending_tx_stream = self.provider.subscribe_pending_txs().await.unwrap().fuse();
 
         let mut pair_stream = get_pair_sync_stream(
             &self.stream_provider,
@@ -136,9 +139,12 @@ impl<M: Middleware + Clone, P: PubsubClient> WorldState<M, P> {
         let pair_sync_abi = BaseContract::from(
             parse_abi(&["event Sync(uint112 reserve0, uint112 reserve1)"]).unwrap(),
         );
-
+        // TODO: revert to old while loop
         loop {
             futures_util::select! {
+                // pending_txn = pending_tx_stream.next() => {
+                //     let pending_txn: Transaction = pending_txn.unwrap();
+                // },
                 // _ = block_stream.next() => {
                 //     let mut gas_price = self.gas_price.write().await;
                 //     *gas_price = self.provider.get_gas_price().await.unwrap();
