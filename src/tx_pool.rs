@@ -33,7 +33,6 @@ impl<M: Middleware + Clone> TxPool<M> {
             .transactions_unordered(4) // what n is ideal?
             .fuse();
 
-        let mut last_txn_hash: H256 = H256::zero();
         loop {
             futures_util::select! {
                 block = block_stream.next() => {
@@ -41,14 +40,11 @@ impl<M: Middleware + Clone> TxPool<M> {
                     let now = Instant::now();
                     let txns = self.provider.get_block_with_txs(block.hash.unwrap()).await.unwrap().unwrap().transactions;
 
-                    println!("txn count: {:?}, time elapsed: {:?}ms", txns.len(), now.elapsed().as_millis());
+                    println!("time elapsed: {:?}ms", now.elapsed().as_millis());
                     for tx_hash in txns {
-                        if let Some(_) = self.data.remove(&tx_hash.hash) {
-                            println!("TXN removed!");
-                        }
-
+                        self.data.remove(&tx_hash.hash);
                     }
-                    println!("Random txn hash: {:?}", last_txn_hash);
+                    println!("Mempool txn count: {:?}", self.data.len());
                 },
                 pending_tx = pending_tx_stream.next() => {
                     let pending_tx: Transaction = pending_tx.unwrap().unwrap();
@@ -56,7 +52,6 @@ impl<M: Middleware + Clone> TxPool<M> {
                     let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
                     let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
                     self.data.insert(pending_tx.hash, fee);
-                    last_txn_hash = pending_tx.hash;
                 }
             }
         }
@@ -82,11 +77,6 @@ mod tests {
         let txpool = TxPool::init(provider_ws.clone());
         let txpool = Arc::new(txpool);
         tokio::spawn(txpool.clone().stream_mempool());
-
-        let mut stream = provider_ws.subscribe_blocks().await.unwrap();
-        while let Some(_) = stream.next().await {
-            println!("Pending txn count: {:?}", txpool.data.len());
-        }
     }
 
     #[tokio::test]
