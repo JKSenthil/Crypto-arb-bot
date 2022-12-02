@@ -37,8 +37,8 @@ impl<M: Middleware + Clone> TxPool<M> {
         let mut idx = gas_prices.len();
         idx *= 9000;
         idx /= 10000;
-        if gas_prices.len() > 10 {
-            idx = gas_prices.len() - 10;
+        if gas_prices.len() > 1 {
+            idx = gas_prices.len() - 2;
         }
 
         return gas_prices[idx];

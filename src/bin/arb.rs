@@ -174,7 +174,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 let contract_call = arbitrage_contract.execute_arbitrage(params);
                 match contract_call.gas_price(gas_price).send().await {
                     Ok(pending_txn) => {
-                        let _ = pending_txn.confirmations(1).await;
+                        let _ = pending_txn.confirmations(6).await;
                         info!("  Txn submitted, curr block: {:?}", block.number.unwrap());
                     }
                     Err(_) => {
@@ -206,7 +206,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         .collect::<Vec<String>>(),
                 );
                 txn_count += 1;
-                if txn_count > 4 {
+                if txn_count > 3 {
                     process::exit(1);
                 }
 
