@@ -9,7 +9,7 @@ use ethers::{
 };
 
 abigen!(Liquidations, "abis/Liquidations.json");
-abigen!(Flashloan, "abis/FlashloanV2.json");
+abigen!(Flashloan, "abis/FlashloanV3.json");
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

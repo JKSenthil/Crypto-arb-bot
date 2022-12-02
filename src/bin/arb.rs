@@ -23,7 +23,7 @@ use tsuki::{
     world::{Protocol, WorldState},
 };
 
-abigen!(Flashloan, "abis/Flashloan.json");
+abigen!(Flashloan, "abis/FlashloanV3.json");
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -125,7 +125,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         .with_chain_id(137u64);
     let client = SignerMiddleware::new(provider.clone(), wallet);
     let arbitrage_contract = Flashloan::new(
-        "0x7586b61cd07d3f7b1e701d0ab719f9feea4674af"
+        "0x7472bacc648111408497c087826739e7a1e0a6d2"
             .parse::<Address>()
             .unwrap(),
         Arc::new(client),
@@ -171,10 +171,13 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                     continue;
                 }
 
-                let contract_call = arbitrage_contract.execute_arbitrage(params);
+                let current_block_number = block.number.unwrap();
+                let target_block_number = U256::from(current_block_number.as_u64() + 1);
+                let contract_call =
+                    arbitrage_contract.execute_arbitrage(params, target_block_number);
                 match contract_call.gas_price(gas_price).send().await {
                     Ok(pending_txn) => {
-                        let _ = pending_txn.confirmations(6).await;
+                        let _ = pending_txn.confirmations(1).await;
                         info!("  Txn submitted, curr block: {:?}", block.number.unwrap());
                     }
                     Err(_) => {
