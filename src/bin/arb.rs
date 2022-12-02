@@ -164,7 +164,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                 let gas_price = txpool.get_90th_percentile_gas_price().await + U256::from(100);
                 let txn_fees = gas_price.checked_mul(est_gas_usage).unwrap();
                 if !is_profitable(token, profit, txn_fees) {
-                    info!(
+                    debug!(
                         "  Arb not profitable, fee: {:?}, profit: {:?}",
                         gas_price, profit
                     );
