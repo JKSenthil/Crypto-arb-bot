@@ -225,6 +225,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let routes = vec![
         Route {
+            amount_in: U256::from(10000) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WETH, USDC],
+        },
+        Route {
+            amount_in: U256::from(10000) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WMATIC, USDC],
+        },
+        Route {
+            amount_in: U256::from(10000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WETH, USDT],
+        },
+        Route {
+            amount_in: U256::from(10000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WMATIC, USDT],
+        },
+        Route {
+            amount_in: U256::from(5000) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WETH, USDC],
+        },
+        Route {
+            amount_in: U256::from(5000) * U256::exp10(USDC.get_decimals().into()),
+            token_path: vec![USDC, WMATIC, USDC],
+        },
+        Route {
+            amount_in: U256::from(5000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WETH, USDT],
+        },
+        Route {
+            amount_in: U256::from(5000) * U256::exp10(USDT.get_decimals().into()),
+            token_path: vec![USDT, WMATIC, USDT],
+        },
+        Route {
             amount_in: U256::from(1000) * U256::exp10(USDC.get_decimals().into()),
             token_path: vec![USDC, WETH, USDC],
         },
@@ -256,30 +288,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             amount_in: U256::from(300) * U256::exp10(USDT.get_decimals().into()),
             token_path: vec![USDT, WMATIC, USDT],
         },
-        Route {
-            amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
-            token_path: vec![DAI, WETH, DAI],
-        },
-        Route {
-            amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
-            token_path: vec![DAI, WMATIC, DAI],
-        },
-        Route {
-            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
-            token_path: vec![USDC, WETH, USDC],
-        },
-        Route {
-            amount_in: U256::from(30) * U256::exp10(USDC.get_decimals().into()),
-            token_path: vec![USDC, WMATIC, USDC],
-        },
-        Route {
-            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
-            token_path: vec![USDT, WETH, USDT],
-        },
-        Route {
-            amount_in: U256::from(30) * U256::exp10(USDT.get_decimals().into()),
-            token_path: vec![USDT, WMATIC, USDT],
-        },
+        // Route {
+        //     amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
+        //     token_path: vec![DAI, WETH, DAI],
+        // },
+        // Route {
+        //     amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
+        //     token_path: vec![DAI, WMATIC, DAI],
+        // },
     ];
 
     let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
