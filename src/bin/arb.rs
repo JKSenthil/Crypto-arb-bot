@@ -2,7 +2,7 @@ use clap::Parser;
 use dotenv::dotenv;
 use ethers::{
     prelude::{abigen, SignerMiddleware},
-    providers::{Middleware, Provider, PubsubClient, Ws},
+    providers::{Http, Middleware, Provider, PubsubClient, Ws},
     signers::{LocalWallet, Signer},
     types::{Address, U256},
 };
@@ -36,18 +36,6 @@ struct Args {
 struct Route {
     amount_in: U256,
     token_path: Vec<ERC20Token>,
-}
-
-#[inline(always)]
-fn threshold(token: ERC20Token, amount_diff: U256) -> bool {
-    match token {
-        USDC => amount_diff >= U256::from(10000),
-        USDT => amount_diff >= U256::from(10000),
-        DAI => amount_diff >= amount_to_U256(0.01, 2, DAI),
-        WMATIC => amount_diff >= amount_to_U256(0.01, 2, WMATIC),
-        WETH => amount_diff >= amount_to_U256(0.00005, 5, WETH),
-        _ => false,
-    }
 }
 
 #[inline(always)]
@@ -101,6 +89,9 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     stream_provider: Provider<P>,
     routes: Vec<Route>,
 ) {
+    let global_provider = Provider::<Http>::try_from("https://polygon-rpc.com").unwrap();
+    let global_provider = Arc::new(global_provider);
+
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
 
     let txpool = TxPool::init(provider.clone(), 1000);
@@ -123,7 +114,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         .parse::<LocalWallet>()
         .unwrap()
         .with_chain_id(137u64);
-    let client = SignerMiddleware::new(provider.clone(), wallet);
+    let client = SignerMiddleware::new(global_provider.clone(), wallet);
     let arbitrage_contract = Flashloan::new(
         "0x7472bacc648111408497c087826739e7a1e0a6d2"
             .parse::<Address>()
@@ -152,10 +143,6 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
             let amount_in = routes[i].amount_in;
             if est_amount_out > amount_in {
                 let profit = est_amount_out - amount_in;
-                // ensure profit minimum threshold is met
-                if !threshold(token, profit) {
-                    continue;
-                }
 
                 let params =
                     construct_arb_params(amount_in, &routes[i].token_path, &protocol_route);
@@ -209,7 +196,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         .collect::<Vec<String>>(),
                 );
                 txn_count += 1;
-                if txn_count > 3 {
+                if txn_count > 5 {
                     process::exit(1);
                 }
 
