@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use ethers::{
     providers::{Middleware, Provider},
@@ -16,12 +16,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?
         .transactions_unordered(16);
     while let Ok(tx) = pending_tx_stream.next().await.unwrap() {
+        let now = Instant::now();
         let typed_tx: TypedTransaction = (&tx).into();
         let result = provider_ipc.call(&typed_tx, None).await;
         match result {
             Ok(b) => println!("WORKS! {:?}", b),
             Err(e) => println!("ERROR! {:?}", e),
         };
+        println!("Time elapsed: {:?}ms", now.elapsed().as_millis());
     }
 
     Ok(())
