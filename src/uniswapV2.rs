@@ -7,7 +7,7 @@ use ethers::{
     abi::Token::{self, *},
     contract::Contract,
     core::abi::Abi,
-    prelude::abigen,
+    prelude::{abigen, builders::ContractCall},
     providers::Middleware,
     types::{Address, U256},
 };
@@ -125,6 +125,50 @@ impl<M: Middleware> UniswapV2Client<M> {
         }
     }
 
+    pub fn get_quote_txn(
+        &self,
+        protocol: UniswapV2,
+        token_in: ERC20Token,
+        token_out: ERC20Token,
+        amount_in: U256,
+    ) -> ContractCall<M, Vec<ethers::prelude::U256>> {
+        let router = &self.router_mapping[protocol as usize];
+        return router.get_amounts_out(
+            amount_in,
+            vec![token_in.get_address(), token_out.get_address()],
+        );
+    }
+
+    // function swapExactTokensForTokens(
+    //     uint256 amountIn,
+    //     uint256 amountOutMin,
+    //     address[] calldata path,
+    //     address to,
+    //     uint256 deadline
+    // ) external returns (uint256[] memory amounts);
+    // pub fn get_swapExactTokensForTokens_txn(
+    //     &self,
+    //     protocol: UniswapV2,
+    //     token_in: ERC20Token,
+    //     token_out: ERC20Token,
+    //     amount_in: U256,
+    // ) -> ContractCall<M, Vec<U256>> {
+    //     let router = &self.router_mapping[protocol as usize];
+    //     let path = vec![token_in, token_out]
+    //         .into_iter()
+    //         .map(|x| x.get_address())
+    //         .collect();
+    //     return router.swap_exact_tokens_for_tokens(
+    //         amount_in,
+    //         1,
+    //         path,
+    //         "0x06a92D032d97D5a3c9F550e551B4B6f42518A07B"
+    //             .parse::<Address>()
+    //             .unwrap(),
+    //         0,
+    //     );
+    // }
+
     pub async fn quote(
         &self,
         protocol: UniswapV2,
@@ -132,19 +176,11 @@ impl<M: Middleware> UniswapV2Client<M> {
         token_out: ERC20Token,
         amount_in: U256,
     ) -> U256 {
-        let router = &self.router_mapping[protocol as usize];
-        let result = router
-            .get_amounts_out(
-                amount_in,
-                vec![token_in.get_address(), token_out.get_address()],
-            )
+        let result = self
+            .get_quote_txn(protocol, token_in, token_out, amount_in)
             .call()
             .await
             .unwrap();
-        let a = router.get_amounts_out(
-            amount_in,
-            vec![token_in.get_address(), token_out.get_address()],
-        );
         return result[1];
     }
 
