@@ -38,7 +38,6 @@ pub struct UniswapV2Pair {
     fees: U256,
 }
 
-// TODO implement correct MeshSwap implementation?
 impl UniswapV2Pair {
     pub fn default() -> Self {
         Self {
@@ -160,7 +159,7 @@ impl<M: Middleware> UniswapV2Client<M> {
             .collect();
         return router.swap_exact_tokens_for_tokens(
             amount_in,
-            U256::one(),
+            U256::zero(),
             path,
             "0x06a92D032d97D5a3c9F550e551B4B6f42518A07B"
                 .parse::<Address>()
