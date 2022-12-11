@@ -2,7 +2,7 @@ use ethers::{
     abi::{parse_abi, Address},
     prelude::BaseContract,
     providers::{Middleware, Provider, PubsubClient},
-    types::{Transaction, U256},
+    types::U256,
 };
 use futures_util::StreamExt;
 use log::debug;

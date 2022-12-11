@@ -146,28 +146,28 @@ impl<M: Middleware> UniswapV2Client<M> {
     //     address to,
     //     uint256 deadline
     // ) external returns (uint256[] memory amounts);
-    // pub fn get_swapExactTokensForTokens_txn(
-    //     &self,
-    //     protocol: UniswapV2,
-    //     token_in: ERC20Token,
-    //     token_out: ERC20Token,
-    //     amount_in: U256,
-    // ) -> ContractCall<M, Vec<U256>> {
-    //     let router = &self.router_mapping[protocol as usize];
-    //     let path = vec![token_in, token_out]
-    //         .into_iter()
-    //         .map(|x| x.get_address())
-    //         .collect();
-    //     return router.swap_exact_tokens_for_tokens(
-    //         amount_in,
-    //         1,
-    //         path,
-    //         "0x06a92D032d97D5a3c9F550e551B4B6f42518A07B"
-    //             .parse::<Address>()
-    //             .unwrap(),
-    //         0,
-    //     );
-    // }
+    pub fn get_swapExactTokensForTokens_txn(
+        &self,
+        protocol: UniswapV2,
+        token_in: ERC20Token,
+        token_out: ERC20Token,
+        amount_in: U256,
+    ) -> ContractCall<M, Vec<U256>> {
+        let router = &self.router_mapping[protocol as usize];
+        let path = vec![token_in, token_out]
+            .into_iter()
+            .map(|x| x.get_address())
+            .collect();
+        return router.swap_exact_tokens_for_tokens(
+            amount_in,
+            U256::one(),
+            path,
+            "0x06a92D032d97D5a3c9F550e551B4B6f42518A07B"
+                .parse::<Address>()
+                .unwrap(),
+            U256::from(2670725202_u32),
+        );
+    }
 
     pub async fn quote(
         &self,
