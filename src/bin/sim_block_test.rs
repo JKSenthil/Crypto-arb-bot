@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ethers::{providers::Provider, types::U256};
 use tsuki::constants::{protocol::UniswapV2, token::ERC20Token};
 use tsuki::uniswapV2::UniswapV2Client;
+use tsuki::utils::multicall::Multicall;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,11 +18,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         U256::from(1_000_000),
     );
 
-    let data = tx.call().await;
-    match data {
-        Ok(b) => println!("WORKS! {:?}", b),
-        Err(e) => println!("ERROR! {:?}", e),
-    };
+    let mut multicall = Multicall::new(provider_ipc.clone());
+    multicall.add_call(tx);
+
+    let data = multicall.call_raw().await;
+    println!("{:?}", data);
 
     Ok(())
 }
