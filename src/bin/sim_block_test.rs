@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
 use ethers::prelude::abigen;
+use ethers::providers::{JsonRpcClient, Middleware, ProviderError};
+use ethers::types::transaction::eip2718::TypedTransaction;
+use ethers::types::{GethTrace, Transaction};
+use ethers::utils::serialize;
 use ethers::{providers::Provider, types::U256};
 use tsuki::constants::{protocol::UniswapV2, token::ERC20Token};
 use tsuki::uniswapV2::UniswapV2Client;
-use tsuki::utils::multicall::Multicall;
 
 abigen!(
     ERC20,
@@ -12,6 +15,15 @@ abigen!(
         approve(address spender, uint256 amount) external returns (bool)
     ]"#,
 );
+
+async fn debug_trace_call<M: JsonRpcClient>(
+    provider: Arc<Provider<M>>,
+    typed_tx: &TypedTransaction,
+) -> Result<GethTrace, ProviderError> {
+    let tx = serialize(&typed_tx);
+    let block = serialize(&provider.get_block_number().await.unwrap());
+    provider.request("debug_traceCall", [tx, block]).await
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,12 +44,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         U256::from(1_000_000),
     );
 
-    let mut multicall = Multicall::new(provider_ipc.clone());
-    multicall.add_call(approve_tx);
-    multicall.add_call(tx);
+    let result = debug_trace_call(provider_ipc, &approve_tx.tx).await;
+    println!("{:?}", result);
 
-    let data = multicall.call_raw().await;
-    println!("{:?}", data);
+    // let mut multicall = Multicall::new(provider_ipc.clone());
+    // multicall.add_call(approve_tx);
+    // multicall.add_call(tx);
+
+    // let data = multicall.call_raw().await;
+    // println!("{:?}", data);
 
     Ok(())
 }
