@@ -3,8 +3,8 @@ use std::{sync::Arc, time::Instant};
 use ethers::{
     providers::{Middleware, Provider},
     types::{
-        transaction::eip2718::TypedTransaction, BlockNumber, GethDebugTracingOptions,
-        TransactionRequest,
+        transaction::eip2718::TypedTransaction, Address, BlockNumber, Bytes,
+        GethDebugTracingOptions, TransactionRequest, U256,
     },
     utils,
 };
@@ -30,6 +30,22 @@ pub struct TracerConfig {
     pub with_log: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockTraceResult {
+    pub from: Address,
+    pub gas: U256,
+    pub gas_used: U256,
+    pub input: Bytes,
+    pub output: Bytes, // TODO right?
+    pub to: Address,
+    pub r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<U256>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub calls: Option<Vec<BlockTraceResult>>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
@@ -50,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let config = utils::serialize(&config);
     let now = Instant::now();
-    let _res = provider_ipc
+    let _res: Vec<BlockTraceResult> = provider_ipc
         .request("debug_traceBlockByNumber", [block_number, config])
         .await?;
     println!("TIME ELAPSED: {:?}ms", now.elapsed().as_millis());
