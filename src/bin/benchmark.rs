@@ -33,13 +33,20 @@ pub struct TracerConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockTraceResult {
-    pub from: Address,
-    pub gas: U256,
-    pub gas_used: U256,
-    pub input: Bytes,
-    pub output: Bytes, // TODO right?
-    pub to: Address,
-    pub r#type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<Address>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gas: Option<U256>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gas_used: Option<U256>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<Bytes>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<Bytes>, // TODO right?
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<Address>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<U256>,
     #[serde(skip_serializing_if = "Option::is_none")]
