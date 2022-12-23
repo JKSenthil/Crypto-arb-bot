@@ -59,7 +59,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Arc::new(provider_ipc);
 
     let block_number = provider_ipc.get_block_number().await?;
-    let block_number = utils::serialize(&block_number);
     let config = TraceConfig {
         disable_storage: true,
         disable_stack: true,
@@ -71,11 +70,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             with_log: false,
         }),
     };
-    let config = utils::serialize(&config);
+    let mut results = vec![];
     let now = Instant::now();
-    let _res: Vec<BlockTraceResult> = provider_ipc
-        .request("debug_traceBlockByNumber", [block_number, config])
-        .await?;
+    for i in 0..4 {
+        let block_number = utils::serialize(&(block_number - i));
+        let config = utils::serialize(&config);
+        results.push(provider_ipc.request::<_, Vec<BlockTraceResult>>(
+            "debug_traceBlockByNumber",
+            [block_number, config],
+        ));
+    }
+    for result in results {
+        let _res = result.await?;
+    }
     println!("TIME ELAPSED: {:?}ms", now.elapsed().as_millis());
     Ok(())
 }
