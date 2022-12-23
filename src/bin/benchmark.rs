@@ -18,8 +18,16 @@ pub struct TraceConfig {
     pub disable_stack: bool,
     pub enable_memory: bool,
     pub enable_return_data: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tracer: Option<String>,
+    pub tracer: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tracer_config: Option<TracerConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TracerConfig {
+    pub only_top_call: bool,
+    pub with_log: bool,
 }
 
 #[tokio::main]
@@ -27,19 +35,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
-    let block = BlockNumber::Latest;
-    let block = utils::serialize(&block);
+    let block_number = provider_ipc.get_block_number().await?;
+    let block_number = utils::serialize(&block_number);
     let config = TraceConfig {
         disable_storage: true,
         disable_stack: true,
         enable_memory: false,
         enable_return_data: false,
-        tracer: None,
+        tracer: "callTracer".to_string(),
+        tracer_config: Some(TracerConfig {
+            only_top_call: true,
+            with_log: false,
+        }),
     };
     let config = utils::serialize(&config);
     let now = Instant::now();
     let _res = provider_ipc
-        .request("debug_traceBlockByNumber", [block, config])
+        .request("debug_traceBlockByNumber", [block_number, config])
         .await?;
     println!("TIME ELAPSED: {:?}ms", now.elapsed().as_millis());
     Ok(())
