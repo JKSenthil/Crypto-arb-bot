@@ -19,7 +19,6 @@ use tsuki::{
         token::ERC20Token::{self, *},
     },
     tx_pool::TxPool,
-    utils::price_utils::amount_to_U256,
     world::{Protocol, WorldState},
 };
 
