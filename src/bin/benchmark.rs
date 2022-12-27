@@ -1,15 +1,15 @@
-use std::{sync::Arc, time::Instant};
-
+use ethers::types::TxHash;
 use ethers::{
     providers::{Middleware, Provider},
     types::{
-        transaction::eip2718::TypedTransaction, Address, BlockNumber, Bytes,
+        transaction::eip2718::TypedTransaction, Address, Block, BlockNumber, Bytes,
         GethDebugTracingOptions, TransactionRequest, U256,
     },
     utils,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::{sync::Arc, time::Instant};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +42,7 @@ pub struct BlockTraceResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<Bytes>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub output: Option<Bytes>, // TODO right?
+    pub output: Option<Bytes>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<Address>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,6 +55,20 @@ pub struct BlockTraceResult {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Arc::new(provider_ipc);
+
+    let block_number = provider_ipc.get_block_number().await?;
+    let block_number = utils::serialize(&block_number);
+
+    let block = provider_ipc
+        .request::<_, Block<TxHash>>("debug_getBlockRlp", [block_number])
+        .await?;
+    println!("{:?}", block);
+    Ok(())
+}
+
+async fn debug_traceBlockByNumber() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
