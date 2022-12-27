@@ -58,11 +58,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
-    let block_number = provider_ipc.get_block_number().await?;
-    let block_number = utils::serialize(&block_number);
+    let block = provider_ipc
+        .get_block_with_txs(provider_ipc.get_block_number().await?)
+        .await?
+        .unwrap();
+    let block = utils::serialize(&block);
+
+    let config = TraceConfig {
+        disable_storage: true,
+        disable_stack: true,
+        enable_memory: false,
+        enable_return_data: false,
+        tracer: "callTracer".to_string(),
+        tracer_config: Some(TracerConfig {
+            only_top_call: true,
+            with_log: false,
+        }),
+    };
+    let config = utils::serialize(&config);
 
     let block = provider_ipc
-        .request::<_, Block<TxHash>>("debug_getBlockRlp", [block_number])
+        .request::<_, Vec<BlockTraceResult>>("debug_traceBlock", [block, config])
         .await?;
     println!("{:?}", block);
     Ok(())
