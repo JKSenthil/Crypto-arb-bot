@@ -58,11 +58,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
-    let block_number = provider_ipc.get_block_number().await?;
+    let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
 
     let block = provider_ipc
-        .request::<_, Block<Transaction>>("debug_traceBlockByNumber", [block_number])
+        .request::<_, Block<Transaction>>("debug_getBlockRlp", [block_number])
         .await?;
     println!("{:?}", block);
     Ok(())
