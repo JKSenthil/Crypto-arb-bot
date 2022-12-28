@@ -1,3 +1,4 @@
+use ethers::abi::AbiDecode;
 use ethers::types::{Transaction, TxHash};
 use ethers::{
     providers::{Middleware, Provider},
@@ -61,10 +62,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
 
-    let block = provider_ipc
-        .request::<_, Block<Transaction>>("debug_getBlockRlp", [block_number])
+    let bytes = provider_ipc
+        .request::<_, Bytes>("debug_getBlockRlp", [block_number])
         .await?;
-    println!("{:?}", block);
+    let new_bytes = Bytes::decode(bytes)?;
+    println!("{:?}", new_bytes);
     Ok(())
 }
 
