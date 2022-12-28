@@ -1,5 +1,7 @@
 use ethers::abi::AbiDecode;
+use ethers::providers::Ws;
 use ethers::types::{Transaction, TxHash};
+use ethers::utils::rlp::Rlp;
 use ethers::{
     providers::{Middleware, Provider},
     types::{
@@ -65,8 +67,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bytes = provider_ipc
         .request::<_, Bytes>("debug_getBlockRlp", [block_number])
         .await?;
-    let new_bytes = Bytes::decode(bytes)?;
-    println!("{:?}", new_bytes);
+    let block_rlp = Rlp::new(&bytes);
+
+    println!("{:?}", block_rlp.is_list());
     Ok(())
 }
 
