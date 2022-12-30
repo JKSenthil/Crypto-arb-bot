@@ -61,15 +61,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
-    let block_number = provider_ipc.get_block_number().await?.as_u64();
-    let block_number = utils::serialize(&block_number);
+    let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
+    while let Some(block) = block_stream.next().await {
+        println!("Block number: {:?}", block.number.unwrap());
+        println!("Timestamp: {:?}", Instant::now());
+    }
 
-    let bytes = provider_ipc
-        .request::<_, Bytes>("debug_getBlockRlp", [block_number])
-        .await?;
-    let block_rlp = Rlp::new(&bytes);
+    // let block_number = provider_ipc.get_block_number().await?.as_u64();
+    // let block_number = utils::serialize(&block_number);
 
-    println!("{:?}", block_rlp.is_list());
+    // let bytes = provider_ipc
+    //     .request::<_, Bytes>("debug_getBlockRlp", [block_number])
+    //     .await?;
+    // let block_rlp = Rlp::new(&bytes);
+
+    // println!("{:?}", block_rlp.is_list());
     Ok(())
 }
 
