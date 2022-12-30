@@ -65,7 +65,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let block: Block = rlp::decode(&bytes)?;
-    let block_rlp = rlp::encode(&block);
+    println!("Number of txns: {:?}", block.transactions.len());
+    // let block_rlp = rlp::encode(&block);
     let block_rlp = ["0x", &hex::encode(bytes)].join("");
     // println!("{:?}", block_rlp);
     let block_rlp = utils::serialize(&block_rlp);
@@ -87,6 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request::<_, Vec<BlockTraceResult>>("debug_traceBlock", [block_rlp, config])
         .await?;
 
+    println!("Number in result: {:?}", result.len());
     println!("{:?}", result);
 
     Ok(())
