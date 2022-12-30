@@ -1,5 +1,5 @@
 use ethers::types::{Transaction, TxHash};
-use ethers::utils::rlp;
+use ethers::utils::{hex, rlp};
 use ethers::{
     providers::{Middleware, Provider},
     types::{Address, Bytes, GethDebugTracingOptions, TransactionRequest, U256},
@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let block: Block = rlp::decode(&bytes)?;
     let block_rlp = rlp::encode(&block);
-    let block_rlp = format!("{:x}", block_rlp);
+    let block_rlp = ["0x", &hex::encode(block_rlp)].join("");
     println!("{:?}", block_rlp);
     let block_rlp = utils::serialize(&block_rlp);
 
