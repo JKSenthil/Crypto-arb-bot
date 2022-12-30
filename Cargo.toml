@@ -20,3 +20,10 @@ reqwest = { version = "0.11.12", features = ["json"] } # TODO removeable?
 tokio = { version = "1.21.1", features = ["full"] } # async-await library
 tokio-tungstenite = { version = "0.17.2", features = ["native-tls"] }
 ethers = { version = "1.0.0", features = ["ws", "ipc"] } # eth json-rpc library
+
+# trie
+hash-db = { version = "0.15", default-features = false }
+hash256-std-hasher = { version = "0.15", default-features = false }
+triehash = { version = "0.8", default-features = false }
+reference-trie = { version = "0.25" }
+keccak-hasher = { version = "0.15" }

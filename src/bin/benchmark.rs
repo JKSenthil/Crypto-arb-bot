@@ -1,18 +1,14 @@
-use ethers::abi::AbiDecode;
-use ethers::providers::Ws;
 use ethers::types::{Transaction, TxHash};
-use ethers::utils::rlp::Rlp;
+use ethers::utils::rlp;
 use ethers::{
     providers::{Middleware, Provider},
-    types::{
-        transaction::eip2718::TypedTransaction, Address, Block, BlockNumber, Bytes,
-        GethDebugTracingOptions, TransactionRequest, U256,
-    },
+    types::{Address, Bytes, GethDebugTracingOptions, TransactionRequest, U256},
     utils,
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Instant};
+use tsuki::utils::block::Block;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -61,21 +57,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
-    let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
-    while let Some(block) = block_stream.next().await {
-        println!("Block number: {:?}", block.number.unwrap());
-        println!("Timestamp: {:?}", Instant::now());
-    }
+    let block_number = provider_ipc.get_block_number().await?.as_u64();
+    let block_number = utils::serialize(&block_number);
 
-    // let block_number = provider_ipc.get_block_number().await?.as_u64();
-    // let block_number = utils::serialize(&block_number);
+    let bytes = provider_ipc
+        .request::<_, Bytes>("debug_getBlockRlp", [block_number])
+        .await?;
 
-    // let bytes = provider_ipc
-    //     .request::<_, Bytes>("debug_getBlockRlp", [block_number])
-    //     .await?;
-    // let block_rlp = Rlp::new(&bytes);
+    let block: Block = rlp::decode(&bytes)?;
 
-    // println!("{:?}", block_rlp.is_list());
+    println!("{:?}", block);
     Ok(())
 }
 
