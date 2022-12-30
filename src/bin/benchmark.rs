@@ -65,8 +65,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let block: Block = rlp::decode(&bytes)?;
+    let block_rlp = rlp::encode(&block);
+    let block_rlp = utils::serialize(&block_rlp);
 
-    println!("{:?}", block);
+    let config = TraceConfig {
+        disable_storage: true,
+        disable_stack: true,
+        enable_memory: false,
+        enable_return_data: false,
+        tracer: "callTracer".to_string(),
+        tracer_config: Some(TracerConfig {
+            only_top_call: true,
+            with_log: false,
+        }),
+    };
+    let config = utils::serialize(&config);
+
+    let result = provider_ipc
+        .request::<_, Vec<BlockTraceResult>>("debug_traceBlock", [block_rlp, config])
+        .await?;
+
+    println!("{:?}", result);
+
     Ok(())
 }
 
