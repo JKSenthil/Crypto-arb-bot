@@ -66,8 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let block: Block = rlp::decode(&bytes)?;
     let block_rlp = rlp::encode(&block);
-    let block_rlp = ["0x", &hex::encode(block_rlp)].join("");
-    println!("{:?}", block_rlp);
+    let block_rlp = ["0x", &hex::encode(bytes)].join("");
+    // println!("{:?}", block_rlp);
     let block_rlp = utils::serialize(&block_rlp);
 
     let config = TraceConfig {
