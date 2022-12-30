@@ -52,8 +52,7 @@ pub struct BlockTraceResult {
     pub calls: Option<Vec<BlockTraceResult>>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn t() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
@@ -94,7 +93,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn debug_traceBlockByNumber() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
@@ -122,6 +122,8 @@ async fn debug_traceBlockByNumber() -> Result<(), Box<dyn std::error::Error>> {
     }
     for result in results {
         let _res = result.await?;
+        println!("{:?}", _res);
+        break;
     }
     println!("TIME ELAPSED: {:?}ms", now.elapsed().as_millis());
     Ok(())
