@@ -1,4 +1,5 @@
-use ethers::types::{Transaction, TxHash};
+use ethers::types::H256;
+use ethers::types::{Transaction, TxHash, U64};
 use ethers::utils::{hex, rlp};
 use ethers::{
     providers::{Middleware, Provider},
@@ -8,6 +9,7 @@ use ethers::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::{sync::Arc, time::Instant};
 use tsuki::utils::block::Block;
 
@@ -55,8 +57,30 @@ pub struct BlockTraceResult {
     pub calls: Option<Vec<BlockTraceResult>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TxpoolEntry {
+    pub hash: H256,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct TxpoolContent {
+    pub pending: HashMap<Address, HashMap<U256, TxpoolEntry>>,
+    pub queued: HashMap<Address, HashMap<U256, TxpoolEntry>>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Arc::new(provider_ipc);
+    let content = provider_ipc
+        .request::<_, TxpoolContent>("txpool_content", ())
+        .await?;
+    println!("{:?}", content);
+    Ok(())
+}
+
+async fn debug_traceBlock() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
