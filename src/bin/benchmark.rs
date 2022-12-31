@@ -1,8 +1,7 @@
 use dotenv::dotenv;
 use ethers::prelude::SignerMiddleware;
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::transaction::eip2930::AccessList;
-use ethers::types::{BlockNumber, H256};
+use ethers::types::{BigEndianHash, BlockNumber, H256};
 use ethers::types::{Transaction, TxHash, U64};
 use ethers::utils::{hex, rlp};
 use ethers::{
@@ -78,6 +77,7 @@ pub struct TxpoolContent {
     pub queued: HashMap<Address, HashMap<U256, TxpoolEntry>>,
 }
 
+// TODO manually copy over from one txn type to the other.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -109,11 +109,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?,
     );
     txn.set_gas_price(provider_ipc.get_gas_price().await?);
-
     let signature = signer_client.signer().sign_transaction(&txn).await?;
-    let tx = txn.rlp_signed(&signature);
+    let txn = txn.as_eip1559_ref().unwrap();
+    let txn: EIP1559Transaction = tsuki::utils::transaction::EIP1559Transaction {
+        chain_id: txn.chain_id.unwrap().as_u64(),
+        nonce: txn.nonce.unwrap(),
+        max_priority_fee_per_gas: txn.max_priority_fee_per_gas.unwrap(),
+        max_fee_per_gas: txn.max_fee_per_gas.unwrap(),
+        gas_limit: 2_000_000.into(),
+        kind: tsuki::utils::transaction::TransactionKind::Call(
+            UniswapV2::SUSHISWAP.get_router_address(),
+        ),
+        value: txn.value.unwrap(),
+        input: txn.data.clone().unwrap(),
+        access_list: txn.access_list.clone(),
+        odd_y_parity: false,
+        r: H256::from_uint(&signature.r),
+        s: H256::from_uint(&signature.s),
+    };
+    // let tx = txn.rlp_signed(&signature);
 
-    let txn: TypedTransaction = rlp::decode(&tx)?;
+    // let txn: TypedTransaction = rlp::decode(&tx)?;
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
@@ -142,7 +158,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         base_fee: block.header.base_fee_per_gas,
     };
 
-    let next_block = Block::new(next_partial_header, vec![txn], vec![]);
+    let next_block = Block::new(
+        next_partial_header,
+        vec![tsuki::utils::transaction::TypedTransaction::EIP1559(txn)],
+        vec![],
+    );
 
     let next_block_rlp = rlp::encode(&next_block);
     let next_block_rlp = ["0x", &hex::encode(next_block_rlp)].join("");
