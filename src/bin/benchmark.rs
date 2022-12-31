@@ -34,23 +34,21 @@ pub struct TracerConfig {
 #[serde(rename_all = "camelCase")]
 pub struct BlockTraceResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<Address>,
+    pub from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<U256>,
+    pub gas: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas_used: Option<U256>,
+    pub gas_used: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input: Option<Bytes>,
+    pub input: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output: Option<Bytes>,
+    pub output: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to: Option<Address>,
+    pub to: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<U256>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub calls: Option<Vec<BlockTraceResult>>,
+    pub value: Option<String>,
 }
 
 #[tokio::main]
