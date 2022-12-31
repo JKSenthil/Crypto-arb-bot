@@ -42,7 +42,8 @@ pub struct BlockTraceResult {
     pub gas: U256,
     pub gas_used: U256,
     pub input: Bytes,
-    pub output: Bytes,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<Bytes>,
     pub to: Address,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
