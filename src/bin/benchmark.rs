@@ -61,6 +61,7 @@ pub struct BlockTraceResult {
 #[serde(rename_all = "camelCase")]
 pub struct TxpoolEntry {
     pub hash: H256,
+    pub gas_price: U256,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -77,6 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     let start_block_num = provider_ipc.get_block_number().await?;
     let mut pending_txn_hashs = HashSet::<H256>::new();
+    let mut gas_prices = Vec::<U256>::new();
+    let mut mapping: HashMap<H256, U256> = HashMap::new();
 
     while let Some(block) = block_stream.next().await {
         if block.number.unwrap() == start_block_num + 2 {
@@ -88,9 +91,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for (_address, nonce_map) in pending {
                 for (_nonce, entry) in nonce_map {
                     pending_txn_hashs.insert(entry.hash);
+                    gas_prices.push(entry.gas_price);
+                    mapping.insert(entry.hash, entry.gas_price);
                 }
             }
         } else if block.number.unwrap() == start_block_num + 3 {
+            let mut local_gas_prices = Vec::<U256>::new();
             let block = provider_ipc
                 .get_block(block.number.unwrap())
                 .await?
@@ -101,12 +107,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for txn_hash in txns {
                 if pending_txn_hashs.contains(&txn_hash) {
                     num_txns_in_mempool += 1;
+                    local_gas_prices.push(mapping[&txn_hash]);
                 }
             }
             println!(
                 "{}/{} transactions from mempool were in mined blocked.",
                 num_txns_in_mempool, num_txns
             );
+            gas_prices.sort();
+            gas_prices.reverse();
+            println!("--------------");
+            println!("Local gas prices: {:?}", local_gas_prices);
+            println!("______________");
+            println!(
+                "Mempool gas prices: {:?}",
+                gas_prices.iter().take(local_gas_prices.len())
+            );
+
             break;
         }
     }
