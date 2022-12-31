@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::Instant};
-use tsuki::utils::block::Block;
+use tsuki::utils::block::{self, Block};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -91,6 +91,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         } else if block.number.unwrap() == start_block_num + 3 {
+            let block = provider_ipc
+                .get_block(block.number.unwrap())
+                .await?
+                .unwrap();
             let txns = block.transactions;
             let num_txns = txns.len();
             let mut num_txns_in_mempool = 0;
