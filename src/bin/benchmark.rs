@@ -73,17 +73,39 @@ pub struct TxpoolContent {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
-    let content = provider_ipc
-        .request::<_, TxpoolContent>("txpool_content", ())
-        .await?;
-    let pending = content.pending;
+
+    let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
+    let start_block_num = provider_ipc.get_block_number().await?;
     let mut pending_txn_hashs = HashSet::<H256>::new();
-    for (_address, nonce_map) in pending {
-        for (_nonce, entry) in nonce_map {
-            pending_txn_hashs.insert(entry.hash);
+
+    while let Some(block) = block_stream.next().await {
+        if block.number.unwrap() == start_block_num + 2 {
+            // pull mempool transactions
+            let content = provider_ipc
+                .request::<_, TxpoolContent>("txpool_content", ())
+                .await?;
+            let pending = content.pending;
+            for (_address, nonce_map) in pending {
+                for (_nonce, entry) in nonce_map {
+                    pending_txn_hashs.insert(entry.hash);
+                }
+            }
+        } else if block.number.unwrap() == start_block_num + 3 {
+            let txns = block.transactions;
+            let num_txns = txns.len();
+            let mut num_txns_in_mempool = 0;
+            for txn_hash in txns {
+                if pending_txn_hashs.contains(&txn_hash) {
+                    num_txns_in_mempool += 1;
+                }
+            }
+            println!(
+                "{}/{} transactions from mempool were in mined blocked.",
+                num_txns_in_mempool, num_txns
+            );
+            break;
         }
     }
-    println!("{:?}", pending_txn_hashs);
     Ok(())
 }
 
