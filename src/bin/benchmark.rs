@@ -31,24 +31,31 @@ pub struct TracerConfig {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Res {
+    pub result: BlockTraceResult,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockTraceResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<String>,
+    pub from: Option<Address>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<String>,
+    pub gas: Option<U256>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas_used: Option<String>,
+    pub gas_used: Option<U256>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input: Option<String>,
+    pub input: Option<Bytes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output: Option<String>,
+    pub output: Option<Bytes>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to: Option<String>,
+    pub to: Option<Address>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<String>,
+    pub value: Option<U256>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calls: Option<Vec<BlockTraceResult>>,
 }
 
 #[tokio::main]
@@ -84,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = utils::serialize(&config);
 
     let result = provider_ipc
-        .request::<_, Vec<BlockTraceResult>>("debug_traceBlock", [block_rlp, config])
+        .request::<_, Vec<Res>>("debug_traceBlock", [block_rlp, config])
         .await?;
 
     println!("Number in result: {:?}", result.len());
