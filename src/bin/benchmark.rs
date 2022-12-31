@@ -121,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("______________");
             println!(
                 "Mempool gas prices: {:?}",
-                gas_prices.iter().take(local_gas_prices.len())
+                gas_prices[0..local_gas_prices.len()].to_vec()
             );
 
             break;
