@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = utils::serialize(&config);
 
     let result = provider_ipc
-        .request::<_, Value>("debug_traceBlock", [block_rlp, config])
+        .request::<_, Vec<BlockTraceResult>>("debug_traceBlock", [block_rlp, config])
         .await?;
 
     println!("Number in result: {:?}", result.len());
