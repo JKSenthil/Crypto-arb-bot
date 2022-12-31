@@ -1,17 +1,33 @@
-use std::{num::NonZeroUsize, sync::Arc, time::Instant};
+use std::{num::NonZeroUsize, sync::Arc};
 
 use ethers::{
     providers::{Middleware, PubsubClient},
-    types::{Block, H256, U256},
+    types::{Block, H256, U256, U64},
 };
 use futures_util::StreamExt;
 use lru::LruCache;
 use tokio::sync::RwLock;
 
-/// TODO measure perf & identify any potential issues
 pub struct TxPool<M> {
     provider: Arc<M>,
     lru_cache: RwLock<LruCache<H256, U256>>, // tx hash -> gas price
+    stats: Stats,
+}
+
+struct Stats {
+    block_numbers: Vec<U64>,
+    total_txns: Vec<usize>,
+    seen_txns: Vec<usize>,
+}
+
+impl Stats {
+    fn new() -> Self {
+        Stats {
+            block_numbers: Vec::new(),
+            total_txns: Vec::new(),
+            seen_txns: Vec::new(),
+        }
+    }
 }
 
 impl<M: Middleware + Clone> TxPool<M> {
@@ -19,6 +35,7 @@ impl<M: Middleware + Clone> TxPool<M> {
         TxPool {
             provider: provider.clone(),
             lru_cache: RwLock::new(LruCache::new(NonZeroUsize::new(capacity).unwrap())),
+            stats: Stats::new(),
         }
     }
 
@@ -61,15 +78,19 @@ impl<M: Middleware + Clone> TxPool<M> {
             futures_util::select! {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
-                    // let now = Instant::now();
                     let txns = self.provider.get_block(block.hash.unwrap()).await.unwrap().unwrap().transactions;
-                    // println!("time elapsed: {:?}ms", now.elapsed().as_millis());
-
+                    let num_txns_in_block = txns.len();
                     let mut lru_cache = self.lru_cache.write().await;
+                    let mut count: usize = 0;
                     for tx_hash in txns {
-                        lru_cache.pop(&tx_hash);
+                        match lru_cache.pop(&tx_hash) {
+                            Some(_) => count+= 1,
+                            _ => {}
+                        };
                     }
-                    // println!("Mempool txn count: {:?}", lru_cache.len());
+                    println!("----------------------");
+                    println!("Mempool txn count: {:?}", lru_cache.len());
+                    println!("{}/{} hit rate in mempool", count, num_txns_in_block);
                 },
                 pending_tx = pending_tx_stream.next() => {
                     match pending_tx.unwrap() {

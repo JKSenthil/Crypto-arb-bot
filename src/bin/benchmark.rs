@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::Instant};
+use tsuki::tx_pool::TxPool;
 use tsuki::utils::block::{self, Block};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -72,6 +73,16 @@ pub struct TxpoolContent {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Arc::new(provider_ipc);
+    let txpool = TxPool::init(provider_ipc.clone(), 1000);
+    let txpool = Arc::new(txpool);
+    txpool.stream_mempool().await;
+    Ok(())
+}
+
+#[tokio::main]
+async fn txpool_content() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
