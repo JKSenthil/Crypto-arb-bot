@@ -9,7 +9,7 @@ use ethers::{
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::Instant};
 use tsuki::utils::block::Block;
 
@@ -76,7 +76,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let content = provider_ipc
         .request::<_, TxpoolContent>("txpool_content", ())
         .await?;
-    println!("{:?}", content);
+    let pending = content.pending;
+    let mut pending_txn_hashs = HashSet::<H256>::new();
+    for (_address, nonce_map) in pending {
+        for (_nonce, entry) in nonce_map {
+            pending_txn_hashs.insert(entry.hash);
+        }
+    }
+    println!("{:?}", pending_txn_hashs);
     Ok(())
 }
 
