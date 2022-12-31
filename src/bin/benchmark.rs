@@ -1,4 +1,8 @@
-use ethers::types::H256;
+use dotenv::dotenv;
+use ethers::prelude::SignerMiddleware;
+use ethers::signers::{LocalWallet, Signer};
+use ethers::types::transaction::eip2930::AccessList;
+use ethers::types::{BlockNumber, H256};
 use ethers::types::{Transaction, TxHash, U64};
 use ethers::utils::{hex, rlp};
 use ethers::{
@@ -11,8 +15,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::Instant};
+use tsuki::constants::protocol::UniswapV2;
 use tsuki::tx_pool::TxPool;
-use tsuki::utils::block::{self, Block};
+use tsuki::uniswapV2::UniswapV2Client;
+use tsuki::utils::block::{self, Block, PartialHeader};
+use tsuki::utils::transaction::{EIP1559Transaction, EIP2930Transaction, TypedTransaction};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +80,97 @@ pub struct TxpoolContent {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenv().ok();
+    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Arc::new(provider_ipc);
+
+    let wallet = std::env::var("PRIVATE_KEY")
+        .unwrap()
+        .parse::<LocalWallet>()
+        .unwrap()
+        .with_chain_id(137u64);
+    let signer_client = SignerMiddleware::new(provider_ipc.clone(), wallet);
+
+    // generate one transaction, see what happens
+    let uniswap_client = UniswapV2Client::new(provider_ipc.clone());
+    let mut txn = uniswap_client
+        .get_quote_txn(
+            UniswapV2::SUSHISWAP,
+            tsuki::constants::token::ERC20Token::USDC,
+            tsuki::constants::token::ERC20Token::USDT,
+            U256::from(1_000_000),
+        )
+        .tx;
+    txn.set_from(signer_client.address());
+    txn.set_chain_id(137);
+    txn.set_nonce(
+        signer_client
+            .get_transaction_count(signer_client.address(), None)
+            .await?,
+    );
+    txn.set_gas_price(provider_ipc.get_gas_price().await?);
+
+    let signature = signer_client.signer().sign_transaction(&txn).await?;
+    let tx = txn.rlp_signed(&signature);
+
+    let txn: TypedTransaction = rlp::decode(&tx)?;
+
+    let block_number = provider_ipc.get_block_number().await?.as_u64();
+    let block_number = utils::serialize(&block_number);
+
+    let bytes = provider_ipc
+        .request::<_, Bytes>("debug_getBlockRlp", [block_number])
+        .await?;
+
+    let block: Block = rlp::decode(&bytes)?;
+    let parent_hash = block.header.hash();
+
+    let next_partial_header = PartialHeader {
+        parent_hash: parent_hash,
+        beneficiary: block.header.beneficiary,
+        state_root: block.header.state_root,
+        receipts_root: block.header.receipts_root,
+        logs_bloom: block.header.logs_bloom,
+        difficulty: block.header.difficulty,
+        number: block.header.number + 1,
+        gas_limit: block.header.gas_limit,
+        gas_used: block.header.gas_used,
+        timestamp: block.header.timestamp,
+        extra_data: block.header.extra_data,
+        mix_hash: block.header.mix_hash,
+        nonce: block.header.nonce,
+        base_fee: block.header.base_fee_per_gas,
+    };
+
+    let next_block = Block::new(next_partial_header, vec![txn], vec![]);
+
+    let next_block_rlp = rlp::encode(&next_block);
+    let next_block_rlp = ["0x", &hex::encode(next_block_rlp)].join("");
+    let next_block_rlp = utils::serialize(&next_block_rlp);
+
+    let config = TraceConfig {
+        disable_storage: true,
+        disable_stack: true,
+        enable_memory: false,
+        enable_return_data: false,
+        tracer: "callTracer".to_string(),
+        tracer_config: Some(TracerConfig {
+            only_top_call: true,
+            with_log: false,
+        }),
+    };
+    let config = utils::serialize(&config);
+
+    let result = provider_ipc
+        .request::<_, Vec<Res>>("debug_traceBlock", [next_block_rlp, config])
+        .await?;
+
+    println!("Number in result: {:?}", result.len());
+    println!("{:?}", result);
+    Ok(())
+}
+
+async fn txpool() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
     let txpool = TxPool::init(provider_ipc.clone(), 1000);
