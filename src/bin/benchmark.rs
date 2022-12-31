@@ -7,6 +7,7 @@ use ethers::{
 };
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{sync::Arc, time::Instant};
 use tsuki::utils::block::Block;
 
@@ -32,23 +33,23 @@ pub struct TracerConfig {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockTraceResult {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<Address>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas: Option<U256>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gas_used: Option<U256>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input: Option<Bytes>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output: Option<Bytes>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to: Option<Address>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<U256>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calls: Option<Vec<BlockTraceResult>>,
 }
 
@@ -85,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = utils::serialize(&config);
 
     let result = provider_ipc
-        .request::<_, Vec<BlockTraceResult>>("debug_traceBlock", [block_rlp, config])
+        .request::<_, Value>("debug_traceBlock", [block_rlp, config])
         .await?;
 
     println!("Number in result: {:?}", result.len());
