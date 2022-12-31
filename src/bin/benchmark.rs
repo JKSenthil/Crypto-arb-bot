@@ -38,19 +38,17 @@ pub struct Res {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockTraceResult {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub from: Option<Address>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gas: Option<U256>,
+    pub from: Address,
+    pub gas: U256,
     pub gas_used: U256,
     pub input: Bytes,
     pub output: Bytes,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub to: Option<Address>,
+    pub to: Address,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
+    pub value: U256,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<U256>,
+    pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calls: Option<Vec<BlockTraceResult>>,
 }
