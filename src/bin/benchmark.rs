@@ -1,6 +1,8 @@
 use dotenv::dotenv;
-use ethers::prelude::SignerMiddleware;
-use ethers::signers::{LocalWallet, Signer};
+use ethers::prelude::k256::ecdsa::SigningKey;
+use ethers::prelude::{abigen, SignerMiddleware};
+use ethers::providers::Ipc;
+use ethers::signers::{LocalWallet, Signer, Wallet};
 use ethers::types::{BigEndianHash, BlockNumber, H256, H64};
 use ethers::types::{Transaction, TxHash, U64};
 use ethers::utils::{hex, rlp};
@@ -15,6 +17,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::{sync::Arc, time::Instant};
 use tsuki::constants::protocol::UniswapV2;
+use tsuki::constants::token::ERC20Token;
 use tsuki::tx_pool::TxPool;
 use tsuki::uniswapV2::UniswapV2Client;
 use tsuki::utils::block::{self, Block, PartialHeader};
@@ -80,6 +83,43 @@ pub struct TxpoolContent {
     pub queued: HashMap<Address, HashMap<U256, TxpoolEntry>>,
 }
 
+abigen!(
+    ERC20,
+    r#"[
+        approve(address spender, uint256 amount) external returns (bool)
+    ]"#,
+);
+
+fn gen_txn(
+    txn: ethers::types::transaction::eip2718::TypedTransaction,
+    signer_client: SignerMiddleware<Arc<Provider<Ipc>>, Wallet<SigningKey>>,
+    gas_price: U256,
+    nonce: U256,
+) -> TypedTransaction {
+    let txn = txn.as_eip1559_ref().unwrap();
+
+    let txn_req: EthTransactionRequest = tsuki::utils::transaction::EthTransactionRequest {
+        from: Some(signer_client.address()),
+        to: Some(UniswapV2::SUSHISWAP.get_router_address()),
+        gas_price: None,
+        max_fee_per_gas: Some(gas_price),
+        max_priority_fee_per_gas: Some(gas_price),
+        gas: Some(500_000.into()),
+        value: Some(0.into()),
+        data: txn.data.clone(),
+        nonce: Some(nonce),
+        access_list: None,
+        transaction_type: None,
+    };
+
+    let ttr = txn_req.into_typed_request().unwrap();
+    let mut ethers_ttr: ethers::types::transaction::eip2718::TypedTransaction = ttr.clone().into();
+    ethers_ttr.set_from(signer_client.address());
+    ethers_ttr.set_chain_id(137);
+    let signature = signer_client.signer().sign_transaction_sync(&ethers_ttr);
+    return build_typed_transaction(ttr, signature);
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -95,50 +135,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // generate one transaction, see what happens
     let uniswap_client = UniswapV2Client::new(provider_ipc.clone());
-    // let txn = uniswap_client
-    //     .get_quote_txn(
-    //         UniswapV2::SUSHISWAP,
-    //         tsuki::constants::token::ERC20Token::USDC,
-    //         tsuki::constants::token::ERC20Token::USDT,
-    //         U256::from(1_000_000),
-    //     )
-    //     .tx;
-
-    let txn = uniswap_client
-        .get_swapExactTokensForTokens_txn(
-            UniswapV2::SUSHISWAP,
-            tsuki::constants::token::ERC20Token::USDC,
-            tsuki::constants::token::ERC20Token::USDT,
-            U256::from(1_000_000),
-        )
-        .tx;
 
     let nonce = signer_client
         .get_transaction_count(signer_client.address(), None)
         .await?;
-    let txn = txn.as_eip1559_ref().unwrap();
+    let gas_price = provider_ipc.get_gas_price().await?;
 
-    let gas_price_hehe = provider_ipc.get_gas_price().await?;
-    let txn_req: EthTransactionRequest = tsuki::utils::transaction::EthTransactionRequest {
-        from: Some(signer_client.address()),
-        to: Some(UniswapV2::SUSHISWAP.get_router_address()),
-        gas_price: None,
-        max_fee_per_gas: Some(gas_price_hehe),
-        max_priority_fee_per_gas: Some(gas_price_hehe),
-        gas: Some(500_000.into()),
-        value: Some(0.into()),
-        data: txn.data.clone(),
-        nonce: Some(nonce),
-        access_list: None,
-        transaction_type: None,
-    };
+    let token_contract = ERC20::new(ERC20Token::USDC.get_address(), provider_ipc.clone());
+    let approve_tx = token_contract.approve(
+        UniswapV2::SUSHISWAP.get_router_address(),
+        U256::from(1_000_000),
+    );
 
-    let ttr = txn_req.into_typed_request().unwrap();
-    let mut ethers_ttr: ethers::types::transaction::eip2718::TypedTransaction = ttr.clone().into();
-    ethers_ttr.set_from(signer_client.address());
-    ethers_ttr.set_chain_id(137);
-    let signature = signer_client.signer().sign_transaction_sync(&ethers_ttr);
-    let txn = build_typed_transaction(ttr, signature);
+    let swap_tx = uniswap_client.get_swapExactTokensForTokens_txn(
+        UniswapV2::SUSHISWAP,
+        tsuki::constants::token::ERC20Token::USDC,
+        tsuki::constants::token::ERC20Token::USDT,
+        U256::from(1_000_000),
+    );
+
+    let approve_tx = gen_txn(approve_tx.tx, signer_client.clone(), gas_price, nonce);
+    let swap_tx = gen_txn(swap_tx.tx, signer_client, gas_price, nonce + 1);
+
     let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
 
@@ -148,7 +166,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let block: Block = rlp::decode(&bytes)?;
     let mut txns = block.transactions;
-    txns.push(txn);
+    txns.push(approve_tx);
+    txns.push(swap_tx);
     let sim_block: Block = Block::new(block.header.into(), txns, block.ommers);
 
     let sim_block_rlp = rlp::encode(&sim_block);
@@ -175,6 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Time elapsed: {}ms", now.elapsed().as_millis());
 
     println!("Number in result: {:?}", result.len());
+    println!("{:?}", result[result.len() - 2]);
     println!("{:?}", result[result.len() - 1]);
     Ok(())
 }

@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let token_contract = ERC20::new(ERC20Token::USDC.get_address(), provider_ipc.clone());
     let approve_tx = token_contract.approve(
-        UniswapV2::QUICKSWAP.get_router_address(),
+        UniswapV2::SUSHISWAP.get_router_address(),
         U256::from(1_000_000),
     );
 
