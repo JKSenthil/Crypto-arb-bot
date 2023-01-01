@@ -128,9 +128,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         r: H256::from_uint(&signature.r),
         s: H256::from_uint(&signature.s),
     };
-    // let tx = txn.rlp_signed(&signature);
-
-    // let txn: TypedTransaction = rlp::decode(&tx)?;
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
@@ -140,34 +137,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     let block: Block = rlp::decode(&bytes)?;
-    let parent_hash = block.header.hash();
+    let mut txns = block.transactions;
+    txns.push(tsuki::utils::transaction::TypedTransaction::EIP1559(txn));
+    let sim_block: Block = Block::new(block.header.into(), txns, block.ommers);
 
-    let next_partial_header = PartialHeader {
-        parent_hash: parent_hash,
-        beneficiary: block.header.beneficiary,
-        state_root: block.header.state_root,
-        receipts_root: block.header.receipts_root,
-        logs_bloom: block.header.logs_bloom,
-        difficulty: block.header.difficulty,
-        number: block.header.number + 1,
-        gas_limit: block.header.gas_limit,
-        gas_used: block.header.gas_used,
-        timestamp: block.header.timestamp,
-        extra_data: block.header.extra_data,
-        mix_hash: block.header.mix_hash,
-        nonce: H64::zero(),
-        base_fee: block.header.base_fee_per_gas,
-    };
-
-    let next_block = Block::new(
-        next_partial_header,
-        vec![tsuki::utils::transaction::TypedTransaction::EIP1559(txn)],
-        vec![],
-    );
-
-    let next_block_rlp = rlp::encode(&next_block);
-    let next_block_rlp = ["0x", &hex::encode(next_block_rlp)].join("");
-    let next_block_rlp = utils::serialize(&next_block_rlp);
+    let sim_block_rlp = rlp::encode(&sim_block);
+    let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
+    let sim_block_rlp = utils::serialize(&sim_block_rlp);
 
     let config = TraceConfig {
         disable_storage: true,
@@ -183,7 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = utils::serialize(&config);
 
     let result = provider_ipc
-        .request::<_, Vec<Res>>("debug_traceBlock", [next_block_rlp, config])
+        .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
         .await?;
 
     println!("Number in result: {:?}", result.len());
