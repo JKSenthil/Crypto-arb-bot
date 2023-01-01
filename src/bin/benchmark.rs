@@ -1,7 +1,7 @@
 use dotenv::dotenv;
 use ethers::prelude::SignerMiddleware;
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{BigEndianHash, BlockNumber, H256};
+use ethers::types::{BigEndianHash, BlockNumber, H256, H64};
 use ethers::types::{Transaction, TxHash, U64};
 use ethers::utils::{hex, rlp};
 use ethers::{
@@ -101,6 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             U256::from(1_000_000),
         )
         .tx;
+
     txn.set_from(signer_client.address());
     txn.set_chain_id(137);
     txn.set_nonce(
@@ -120,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         kind: tsuki::utils::transaction::TransactionKind::Call(
             UniswapV2::SUSHISWAP.get_router_address(),
         ),
-        value: txn.value.unwrap(),
+        value: U256::zero(),
         input: txn.data.clone().unwrap(),
         access_list: txn.access_list.clone(),
         odd_y_parity: false,
@@ -154,7 +155,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         timestamp: block.header.timestamp,
         extra_data: block.header.extra_data,
         mix_hash: block.header.mix_hash,
-        nonce: block.header.nonce,
+        nonce: H64::zero(),
         base_fee: block.header.base_fee_per_gas,
     };
 
