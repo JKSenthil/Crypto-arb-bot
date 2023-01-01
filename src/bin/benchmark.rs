@@ -104,11 +104,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     txn.set_from(signer_client.address());
     txn.set_chain_id(137);
-    txn.set_nonce(
-        signer_client
-            .get_transaction_count(signer_client.address(), None)
-            .await?,
-    );
+    let nonce = signer_client
+        .get_transaction_count(signer_client.address(), None)
+        .await?;
+    println!("Nonce is {}", nonce);
+    txn.set_nonce(nonce);
     txn.set_gas_price(provider_ipc.get_gas_price().await?);
     let signature = signer_client.signer().sign_transaction(&txn).await?;
     let txn = txn.as_eip1559_ref().unwrap();
