@@ -85,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // 1) predict next block
         let block_number = block.number.unwrap();
-        let block_number = utils::serialize(&block_number);
+        let block_number = utils::serialize(&(block_number.as_u64()));
 
         let bytes = provider_ipc
             .request::<_, Bytes>("debug_getBlockRlp", [block_number])
