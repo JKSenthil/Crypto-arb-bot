@@ -147,6 +147,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         U256::from(1_000_000),
     );
 
+    println!("{:?}", approve_tx.tx);
+
     let swap_tx = uniswap_client.get_swapExactTokensForTokens_txn(
         UniswapV2::SUSHISWAP,
         tsuki::constants::token::ERC20Token::USDC,
