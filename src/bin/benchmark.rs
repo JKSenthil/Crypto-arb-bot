@@ -77,9 +77,23 @@ pub struct TxpoolContent {
     pub queued: HashMap<Address, HashMap<U256, TxpoolEntry>>,
 }
 
-// TODO manually copy over from one txn type to the other.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Arc::new(provider_ipc);
+    let block_number = provider_ipc.get_block_number().await?.as_u64();
+    let block_number = utils::serialize(&block_number);
+
+    let bytes = provider_ipc
+        .request::<_, Bytes>("debug_getBlockRlp", [block_number])
+        .await?;
+
+    let block: Block = rlp::decode(&bytes)?;
+    println!("{:?}", block);
+    Ok(())
+}
+
+async fn oof() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
