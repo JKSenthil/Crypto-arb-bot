@@ -81,22 +81,6 @@ pub struct TxpoolContent {
 }
 
 #[tokio::main]
-async fn oof() -> Result<(), Box<dyn std::error::Error>> {
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
-    let provider_ipc = Arc::new(provider_ipc);
-    let block_number = provider_ipc.get_block_number().await?.as_u64();
-    let block_number = utils::serialize(&block_number);
-
-    let bytes = provider_ipc
-        .request::<_, Bytes>("debug_getBlockRlp", [block_number])
-        .await?;
-
-    let block: Block = rlp::decode(&bytes)?;
-    println!("{:?}", block);
-    Ok(())
-}
-
-#[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
@@ -111,8 +95,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // generate one transaction, see what happens
     let uniswap_client = UniswapV2Client::new(provider_ipc.clone());
+    // let txn = uniswap_client
+    //     .get_quote_txn(
+    //         UniswapV2::SUSHISWAP,
+    //         tsuki::constants::token::ERC20Token::USDC,
+    //         tsuki::constants::token::ERC20Token::USDT,
+    //         U256::from(1_000_000),
+    //     )
+    //     .tx;
+
     let txn = uniswap_client
-        .get_quote_txn(
+        .get_swapExactTokensForTokens_txn(
             UniswapV2::SUSHISWAP,
             tsuki::constants::token::ERC20Token::USDC,
             tsuki::constants::token::ERC20Token::USDT,
@@ -175,7 +168,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let config = utils::serialize(&config);
 
-    let now = Instant::now()
+    let now = Instant::now();
     let result = provider_ipc
         .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
         .await?;
