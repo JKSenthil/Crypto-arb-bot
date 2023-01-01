@@ -162,14 +162,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ERC20Token::USDC.get_address(),
         signer_client.clone(),
         gas_price,
-        nonce,
+        nonce + 1,
     );
     let swap_tx = gen_txn(
         swap_tx.tx,
         UniswapV2::SUSHISWAP.get_router_address(),
         signer_client,
         gas_price,
-        nonce + 1,
+        nonce,
     );
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
@@ -181,8 +181,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let block: Block = rlp::decode(&bytes)?;
     let mut txns = block.transactions;
-    txns.push(approve_tx);
     txns.push(swap_tx);
+    txns.push(approve_tx);
     let sim_block: Block = Block::new(block.header.into(), txns, block.ommers);
 
     let sim_block_rlp = rlp::encode(&sim_block);
