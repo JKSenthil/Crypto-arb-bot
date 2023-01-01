@@ -129,7 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let txn_req: EthTransactionRequest = tsuki::utils::transaction::EthTransactionRequest {
         from: Some(signer_client.address()),
         to: Some(UniswapV2::SUSHISWAP.get_router_address()),
-        gas_price: Some(gas_price_hehe),
+        gas_price: None,
         max_fee_per_gas: Some(gas_price_hehe),
         max_priority_fee_per_gas: Some(gas_price_hehe),
         gas: Some(500_000.into()),
@@ -141,7 +141,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let ttr = txn_req.into_typed_request().unwrap();
-    let ethers_ttr: ethers::types::transaction::eip2718::TypedTransaction = ttr.clone().into();
+    let mut ethers_ttr: ethers::types::transaction::eip2718::TypedTransaction = ttr.clone().into();
+    ethers_ttr.set_from(signer_client.address());
     let signature = signer_client.signer().sign_transaction_sync(&ethers_ttr);
     let txn = build_typed_transaction(ttr, signature);
 
