@@ -1,7 +1,6 @@
 //! transaction related data
 
 use ethers::{
-    prelude::k256::elliptic_curve::consts::U2,
     types::{
         transaction::eip2930::{AccessList, AccessListItem},
         Address, Bytes, Signature, SignatureError, H256, U256,
@@ -488,13 +487,13 @@ impl TypedTransaction {
     }
 
     /// Recovers the Ethereum address which was used to sign the transaction.
-    // pub fn recover(&self) -> Result<Address, SignatureError> {
-    //     match self {
-    //         TypedTransaction::Legacy(tx) => tx.recover(),
-    //         TypedTransaction::EIP2930(tx) => tx.recover(),
-    //         TypedTransaction::EIP1559(tx) => tx.recover(),
-    //     }
-    // }
+    pub fn recover(&self) -> Result<Address, SignatureError> {
+        match self {
+            TypedTransaction::Legacy(tx) => tx.recover(),
+            TypedTransaction::EIP2930(tx) => tx.recover(),
+            TypedTransaction::EIP1559(tx) => tx.recover(),
+        }
+    }
 
     /// Returns what kind of transaction this is
     pub fn kind(&self) -> &TransactionKind {
@@ -522,8 +521,8 @@ impl TypedTransaction {
             }
             TypedTransaction::EIP1559(tx) => {
                 let v = tx.odd_y_parity as u8;
-                let r = tx.r;
-                let s = tx.s;
+                let r = U256::from_big_endian(&tx.r[..]);
+                let s = U256::from_big_endian(&tx.s[..]);
                 Signature { r, s, v: v.into() }
             }
         }
@@ -738,8 +737,8 @@ pub struct EIP1559Transaction {
     pub input: Bytes,
     pub access_list: AccessList,
     pub odd_y_parity: bool,
-    pub r: U256,
-    pub s: U256,
+    pub r: H256,
+    pub s: H256,
 }
 
 impl EIP1559Transaction {
@@ -755,15 +754,15 @@ impl EIP1559Transaction {
         H256::from_slice(keccak256(&out).as_slice())
     }
 
-    // Recovers the Ethereum address which was used to sign the transaction.
-    // pub fn recover(&self) -> Result<Address, SignatureError> {
-    //     let mut sig = [0u8; 65];
-    //     sig[0..32].copy_from_slice(&self.r[..]);
-    //     sig[32..64].copy_from_slice(&self.s[..]);
-    //     sig[64] = self.odd_y_parity as u8;
-    //     let signature = Signature::try_from(&sig[..])?;
-    //     signature.recover(EIP1559TransactionRequest::from(self.clone()).hash())
-    // }
+    /// Recovers the Ethereum address which was used to sign the transaction.
+    pub fn recover(&self) -> Result<Address, SignatureError> {
+        let mut sig = [0u8; 65];
+        sig[0..32].copy_from_slice(&self.r[..]);
+        sig[32..64].copy_from_slice(&self.s[..]);
+        sig[64] = self.odd_y_parity as u8;
+        let signature = Signature::try_from(&sig[..])?;
+        signature.recover(EIP1559TransactionRequest::from(self.clone()).hash())
+    }
 }
 
 impl Encodable for EIP1559Transaction {
@@ -779,8 +778,8 @@ impl Encodable for EIP1559Transaction {
         s.append(&self.input.as_ref());
         s.append(&self.access_list);
         s.append(&self.odd_y_parity);
-        s.append(&self.r);
-        s.append(&self.s);
+        s.append(&U256::from_big_endian(&self.r[..]));
+        s.append(&U256::from_big_endian(&self.s[..]));
     }
 }
 
@@ -801,8 +800,16 @@ impl Decodable for EIP1559Transaction {
             input: rlp.val_at::<Vec<u8>>(7)?.into(),
             access_list: rlp.val_at(8)?,
             odd_y_parity: rlp.val_at(9)?,
-            r: rlp.val_at(10)?,
-            s: rlp.val_at(11)?,
+            r: {
+                let mut rarr = [0u8; 32];
+                rlp.val_at::<U256>(10)?.to_big_endian(&mut rarr);
+                H256::from(rarr)
+            },
+            s: {
+                let mut sarr = [0u8; 32];
+                rlp.val_at::<U256>(11)?.to_big_endian(&mut sarr);
+                H256::from(sarr)
+            },
         })
     }
 }
@@ -819,4 +826,113 @@ pub struct TransactionEssentials {
     pub value: U256,
     pub chain_id: Option<u64>,
     pub access_list: AccessList,
+}
+
+/// converts the `request` into a [`TypedTransactionRequest`] with the given signature
+///
+/// # Errors
+///
+/// This will fail if the `signature` contains an erroneous recovery id.
+pub fn build_typed_transaction(
+    request: TypedTransactionRequest,
+    signature: Signature,
+) -> TypedTransaction {
+    let tx = match request {
+        TypedTransactionRequest::Legacy(tx) => {
+            let LegacyTransactionRequest {
+                nonce,
+                gas_price,
+                gas_limit,
+                kind,
+                value,
+                input,
+                ..
+            } = tx;
+            TypedTransaction::Legacy(LegacyTransaction {
+                nonce,
+                gas_price,
+                gas_limit,
+                kind,
+                value,
+                input,
+                signature,
+            })
+        }
+        TypedTransactionRequest::EIP2930(tx) => {
+            let EIP2930TransactionRequest {
+                chain_id,
+                nonce,
+                gas_price,
+                gas_limit,
+                kind,
+                value,
+                input,
+                access_list,
+            } = tx;
+
+            let recid: u8 = signature.recovery_id().unwrap().into();
+
+            TypedTransaction::EIP2930(EIP2930Transaction {
+                chain_id,
+                nonce,
+                gas_price,
+                gas_limit,
+                kind,
+                value,
+                input,
+                access_list: access_list.into(),
+                odd_y_parity: recid != 0,
+                r: {
+                    let mut rarr = [0_u8; 32];
+                    signature.r.to_big_endian(&mut rarr);
+                    H256::from(rarr)
+                },
+                s: {
+                    let mut sarr = [0_u8; 32];
+                    signature.s.to_big_endian(&mut sarr);
+                    H256::from(sarr)
+                },
+            })
+        }
+        TypedTransactionRequest::EIP1559(tx) => {
+            let EIP1559TransactionRequest {
+                chain_id,
+                nonce,
+                max_priority_fee_per_gas,
+                max_fee_per_gas,
+                gas_limit,
+                kind,
+                value,
+                input,
+                access_list,
+            } = tx;
+
+            let recid: u8 = signature.recovery_id().unwrap().into();
+
+            TypedTransaction::EIP1559(EIP1559Transaction {
+                chain_id,
+                nonce,
+                max_priority_fee_per_gas,
+                max_fee_per_gas,
+                gas_limit,
+                kind,
+                value,
+                input,
+                access_list: access_list.into(),
+                odd_y_parity: recid != 0,
+                r: {
+                    let mut rarr = [0u8; 32];
+                    signature.r.to_big_endian(&mut rarr);
+                    H256::from(rarr)
+                },
+                s: {
+                    let mut sarr = [0u8; 32];
+                    signature.s.to_big_endian(&mut sarr);
+                    H256::from(sarr)
+                },
+            })
+        }
+    };
+
+    tx
 }

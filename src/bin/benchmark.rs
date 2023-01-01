@@ -18,7 +18,10 @@ use tsuki::constants::protocol::UniswapV2;
 use tsuki::tx_pool::TxPool;
 use tsuki::uniswapV2::UniswapV2Client;
 use tsuki::utils::block::{self, Block, PartialHeader};
-use tsuki::utils::transaction::{EIP1559Transaction, EIP2930Transaction, TypedTransaction};
+use tsuki::utils::transaction::{
+    build_typed_transaction, EIP1559Transaction, EIP2930Transaction, EthTransactionRequest,
+    TypedTransaction,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // generate one transaction, see what happens
     let uniswap_client = UniswapV2Client::new(provider_ipc.clone());
-    let mut txn = uniswap_client
+    let txn = uniswap_client
         .get_quote_txn(
             UniswapV2::SUSHISWAP,
             tsuki::constants::token::ERC20Token::USDC,
@@ -117,32 +120,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .tx;
 
-    txn.set_from(signer_client.address());
-    txn.set_chain_id(137);
     let nonce = signer_client
         .get_transaction_count(signer_client.address(), None)
         .await?;
-    println!("Nonce is {}", nonce);
-    txn.set_nonce(nonce);
-    txn.set_gas_price(provider_ipc.get_gas_price().await?);
-    let signature = signer_client.signer().sign_transaction(&txn).await?;
     let txn = txn.as_eip1559_ref().unwrap();
-    let txn: EIP1559Transaction = tsuki::utils::transaction::EIP1559Transaction {
-        chain_id: txn.chain_id.unwrap().as_u64(),
-        nonce: txn.nonce.unwrap(),
-        max_priority_fee_per_gas: txn.max_priority_fee_per_gas.unwrap(),
-        max_fee_per_gas: txn.max_fee_per_gas.unwrap(),
-        gas_limit: 500_000.into(),
-        kind: tsuki::utils::transaction::TransactionKind::Call(
-            UniswapV2::SUSHISWAP.get_router_address(),
-        ),
-        value: U256::zero(),
-        input: txn.data.clone().unwrap(),
-        access_list: txn.access_list.clone(),
-        odd_y_parity: false,
-        r: signature.r,
-        s: signature.s,
+
+    let gas_price_hehe = provider_ipc.get_gas_price().await?;
+    let txn_req: EthTransactionRequest = tsuki::utils::transaction::EthTransactionRequest {
+        from: Some(signer_client.address()),
+        to: Some(UniswapV2::SUSHISWAP.get_router_address()),
+        gas_price: Some(gas_price_hehe),
+        max_fee_per_gas: Some(gas_price_hehe),
+        max_priority_fee_per_gas: Some(gas_price_hehe),
+        gas: Some(500_000.into()),
+        value: Some(0.into()),
+        data: txn.data.clone(),
+        nonce: Some(nonce),
+        access_list: None,
+        transaction_type: None,
     };
+
+    let ttr = txn_req.into_typed_request().unwrap();
+    let ethers_ttr: ethers::types::transaction::eip2718::TypedTransaction = ttr.clone().into();
+    let signature = signer_client.signer().sign_transaction_sync(&ethers_ttr);
+    let txn = build_typed_transaction(ttr, signature);
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
@@ -153,7 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let block: Block = rlp::decode(&bytes)?;
     let mut txns = block.transactions;
-    txns.push(tsuki::utils::transaction::TypedTransaction::EIP1559(txn));
+    txns.push(txn);
     let sim_block: Block = Block::new(block.header.into(), txns, block.ommers);
 
     let sim_block_rlp = rlp::encode(&sim_block);
