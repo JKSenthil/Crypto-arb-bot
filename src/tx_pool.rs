@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use ethers::{
     providers::{Middleware, PubsubClient},
-    types::{Block, H256, U256, U64},
+    types::{Block, Transaction, H256, U256, U64},
 };
 use futures_util::StreamExt;
 use lru::LruCache;
@@ -10,24 +10,7 @@ use tokio::sync::RwLock;
 
 pub struct TxPool<M> {
     provider: Arc<M>,
-    lru_cache: RwLock<LruCache<H256, U256>>, // tx hash -> gas price
-    stats: Stats,
-}
-
-struct Stats {
-    block_numbers: Vec<U64>,
-    total_txns: Vec<usize>,
-    seen_txns: Vec<usize>,
-}
-
-impl Stats {
-    fn new() -> Self {
-        Stats {
-            block_numbers: Vec::new(),
-            total_txns: Vec::new(),
-            seen_txns: Vec::new(),
-        }
-    }
+    lru_cache: RwLock<LruCache<H256, Transaction>>, // tx hash -> gas price
 }
 
 impl<M: Middleware + Clone> TxPool<M> {
@@ -35,15 +18,23 @@ impl<M: Middleware + Clone> TxPool<M> {
         TxPool {
             provider: provider.clone(),
             lru_cache: RwLock::new(LruCache::new(NonZeroUsize::new(capacity).unwrap())),
-            stats: Stats::new(),
         }
+    }
+
+    pub async fn get_mempool(&self) -> Vec<Transaction> {
+        let mut txns: Vec<Transaction> = Vec::new();
+        let lru_cache = self.lru_cache.read().await;
+        for (_, txn) in lru_cache.iter() {
+            txns.push(txn.clone());
+        }
+        return txns;
     }
 
     async fn retrieve_all_gas_prices(&self) -> Vec<U256> {
         let lru_cache = self.lru_cache.read().await;
         let mut gas_prices = Vec::with_capacity(lru_cache.len());
-        for (_, val) in lru_cache.iter() {
-            gas_prices.push(*val);
+        for (_, txn) in lru_cache.iter() {
+            gas_prices.push(txn.gas_price.unwrap());
         }
         return gas_prices;
     }
@@ -79,26 +70,24 @@ impl<M: Middleware + Clone> TxPool<M> {
                 block = block_stream.next() => {
                     let block: Block<H256> = block.unwrap();
                     let txns = self.provider.get_block(block.hash.unwrap()).await.unwrap().unwrap().transactions;
-                    let num_txns_in_block = txns.len();
+                    // let num_txns_in_block = txns.len();
                     let mut lru_cache = self.lru_cache.write().await;
-                    let mut count: usize = 0;
+                    // let mut count: usize = 0;
                     for tx_hash in txns {
-                        match lru_cache.pop(&tx_hash) {
-                            Some(_) => count+= 1,
-                            _ => {}
-                        };
+                        lru_cache.pop(&tx_hash);
                     }
-                    println!("----------------------");
-                    println!("Mempool txn count: {:?}", lru_cache.len());
-                    println!("{}/{} hit rate in mempool", count, num_txns_in_block);
+                    // println!("----------------------");
+                    // println!("Mempool txn count: {:?}", lru_cache.len());
+                    // println!("{}/{} hit rate in mempool", count, num_txns_in_block);
                 },
                 pending_tx = pending_tx_stream.next() => {
                     match pending_tx.unwrap() {
                         Ok(pending_tx) => {
-                            let gas_price = pending_tx.gas_price.unwrap_or(U256::zero());
-                            let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
-                            let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
-                            self.lru_cache.write().await.push(pending_tx.hash, fee);
+                            // Move to seperate function to determine gas prices
+                            // let gas_price = pending_tx.gas_price.unwrap_or(U256::zero());
+                            // let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
+                            // let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
+                            self.lru_cache.write().await.push(pending_tx.hash, pending_tx);
                         },
                         _ => {}
                     };
