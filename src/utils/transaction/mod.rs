@@ -1,6 +1,7 @@
 //! transaction related data
 
 use ethers::{
+    prelude::k256::elliptic_curve::consts::U2,
     types::{
         transaction::eip2930::{AccessList, AccessListItem},
         Address, Bytes, Signature, SignatureError, H256, U256,
@@ -487,13 +488,13 @@ impl TypedTransaction {
     }
 
     /// Recovers the Ethereum address which was used to sign the transaction.
-    pub fn recover(&self) -> Result<Address, SignatureError> {
-        match self {
-            TypedTransaction::Legacy(tx) => tx.recover(),
-            TypedTransaction::EIP2930(tx) => tx.recover(),
-            TypedTransaction::EIP1559(tx) => tx.recover(),
-        }
-    }
+    // pub fn recover(&self) -> Result<Address, SignatureError> {
+    //     match self {
+    //         TypedTransaction::Legacy(tx) => tx.recover(),
+    //         TypedTransaction::EIP2930(tx) => tx.recover(),
+    //         TypedTransaction::EIP1559(tx) => tx.recover(),
+    //     }
+    // }
 
     /// Returns what kind of transaction this is
     pub fn kind(&self) -> &TransactionKind {
@@ -521,8 +522,8 @@ impl TypedTransaction {
             }
             TypedTransaction::EIP1559(tx) => {
                 let v = tx.odd_y_parity as u8;
-                let r = U256::from_big_endian(&tx.r[..]);
-                let s = U256::from_big_endian(&tx.s[..]);
+                let r = tx.r;
+                let s = tx.s;
                 Signature { r, s, v: v.into() }
             }
         }
@@ -737,8 +738,8 @@ pub struct EIP1559Transaction {
     pub input: Bytes,
     pub access_list: AccessList,
     pub odd_y_parity: bool,
-    pub r: H256,
-    pub s: H256,
+    pub r: U256,
+    pub s: U256,
 }
 
 impl EIP1559Transaction {
@@ -754,15 +755,15 @@ impl EIP1559Transaction {
         H256::from_slice(keccak256(&out).as_slice())
     }
 
-    /// Recovers the Ethereum address which was used to sign the transaction.
-    pub fn recover(&self) -> Result<Address, SignatureError> {
-        let mut sig = [0u8; 65];
-        sig[0..32].copy_from_slice(&self.r[..]);
-        sig[32..64].copy_from_slice(&self.s[..]);
-        sig[64] = self.odd_y_parity as u8;
-        let signature = Signature::try_from(&sig[..])?;
-        signature.recover(EIP1559TransactionRequest::from(self.clone()).hash())
-    }
+    // Recovers the Ethereum address which was used to sign the transaction.
+    // pub fn recover(&self) -> Result<Address, SignatureError> {
+    //     let mut sig = [0u8; 65];
+    //     sig[0..32].copy_from_slice(&self.r[..]);
+    //     sig[32..64].copy_from_slice(&self.s[..]);
+    //     sig[64] = self.odd_y_parity as u8;
+    //     let signature = Signature::try_from(&sig[..])?;
+    //     signature.recover(EIP1559TransactionRequest::from(self.clone()).hash())
+    // }
 }
 
 impl Encodable for EIP1559Transaction {
@@ -778,8 +779,8 @@ impl Encodable for EIP1559Transaction {
         s.append(&self.input.as_ref());
         s.append(&self.access_list);
         s.append(&self.odd_y_parity);
-        s.append(&U256::from_big_endian(&self.r[..]));
-        s.append(&U256::from_big_endian(&self.s[..]));
+        s.append(&self.r);
+        s.append(&self.s);
     }
 }
 
@@ -800,16 +801,8 @@ impl Decodable for EIP1559Transaction {
             input: rlp.val_at::<Vec<u8>>(7)?.into(),
             access_list: rlp.val_at(8)?,
             odd_y_parity: rlp.val_at(9)?,
-            r: {
-                let mut rarr = [0u8; 32];
-                rlp.val_at::<U256>(10)?.to_big_endian(&mut rarr);
-                H256::from(rarr)
-            },
-            s: {
-                let mut sarr = [0u8; 32];
-                rlp.val_at::<U256>(11)?.to_big_endian(&mut sarr);
-                H256::from(sarr)
-            },
+            r: rlp.val_at(10)?,
+            s: rlp.val_at(11)?,
         })
     }
 }

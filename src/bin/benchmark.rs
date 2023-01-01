@@ -78,7 +78,7 @@ pub struct TxpoolContent {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn oof() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
     let block_number = provider_ipc.get_block_number().await?.as_u64();
@@ -93,7 +93,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn oof() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
@@ -139,8 +140,8 @@ async fn oof() -> Result<(), Box<dyn std::error::Error>> {
         input: txn.data.clone().unwrap(),
         access_list: txn.access_list.clone(),
         odd_y_parity: false,
-        r: H256::from_uint(&signature.r),
-        s: H256::from_uint(&signature.s),
+        r: signature.r,
+        s: signature.s,
     };
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
