@@ -92,6 +92,7 @@ abigen!(
 
 fn gen_txn(
     txn: ethers::types::transaction::eip2718::TypedTransaction,
+    to: Address,
     signer_client: SignerMiddleware<Arc<Provider<Ipc>>, Wallet<SigningKey>>,
     gas_price: U256,
     nonce: U256,
@@ -100,7 +101,7 @@ fn gen_txn(
 
     let txn_req: EthTransactionRequest = tsuki::utils::transaction::EthTransactionRequest {
         from: Some(signer_client.address()),
-        to: Some(UniswapV2::SUSHISWAP.get_router_address()),
+        to: Some(to),
         gas_price: None,
         max_fee_per_gas: Some(gas_price),
         max_priority_fee_per_gas: Some(gas_price),
@@ -156,8 +157,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         U256::from(1_000_000),
     );
 
-    let approve_tx = gen_txn(approve_tx.tx, signer_client.clone(), gas_price, nonce);
-    let swap_tx = gen_txn(swap_tx.tx, signer_client, gas_price, nonce + 1);
+    let approve_tx = gen_txn(
+        approve_tx.tx,
+        ERC20Token::USDC.get_address(),
+        signer_client.clone(),
+        gas_price,
+        nonce,
+    );
+    let swap_tx = gen_txn(
+        swap_tx.tx,
+        UniswapV2::SUSHISWAP.get_router_address(),
+        signer_client,
+        gas_price,
+        nonce + 1,
+    );
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
