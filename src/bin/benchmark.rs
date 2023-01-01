@@ -143,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ttr = txn_req.into_typed_request().unwrap();
     let mut ethers_ttr: ethers::types::transaction::eip2718::TypedTransaction = ttr.clone().into();
     ethers_ttr.set_from(signer_client.address());
+    ethers_ttr.set_chain_id(137);
     println!("{:?}", ethers_ttr);
     let signature = signer_client.signer().sign_transaction_sync(&ethers_ttr);
     let txn = build_typed_transaction(ttr, signature);

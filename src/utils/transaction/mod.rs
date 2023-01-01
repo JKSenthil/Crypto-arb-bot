@@ -115,7 +115,7 @@ impl EthTransactionRequest {
                         Some(to) => TransactionKind::Call(to),
                         None => TransactionKind::Create,
                     },
-                    chain_id: 0,
+                    chain_id: 137,
                     access_list,
                 },
             )),
@@ -134,7 +134,7 @@ impl EthTransactionRequest {
                             Some(to) => TransactionKind::Call(to),
                             None => TransactionKind::Create,
                         },
-                        chain_id: 0,
+                        chain_id: 137,
                         access_list: access_list.unwrap_or_default(),
                     },
                 ))
