@@ -114,10 +114,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let txn = txn.as_eip1559_ref().unwrap();
     let txn: EIP1559Transaction = tsuki::utils::transaction::EIP1559Transaction {
         chain_id: txn.chain_id.unwrap().as_u64(),
-        nonce: txn.nonce.unwrap(),
+        nonce: txn.nonce.unwrap() - 1,
         max_priority_fee_per_gas: txn.max_priority_fee_per_gas.unwrap(),
         max_fee_per_gas: txn.max_fee_per_gas.unwrap(),
-        gas_limit: 2_000_000.into(),
+        gas_limit: 500_000.into(),
         kind: tsuki::utils::transaction::TransactionKind::Call(
             UniswapV2::SUSHISWAP.get_router_address(),
         ),
