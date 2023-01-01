@@ -175,9 +175,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let config = utils::serialize(&config);
 
+    let now = Instant::now()
     let result = provider_ipc
         .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
         .await?;
+    println!("Time elapsed: {}ms", now.elapsed().as_millis());
 
     println!("Number in result: {:?}", result.len());
     println!("{:?}", result[result.len() - 1]);
