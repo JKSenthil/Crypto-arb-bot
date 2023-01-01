@@ -144,11 +144,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ethers_ttr: ethers::types::transaction::eip2718::TypedTransaction = ttr.clone().into();
     ethers_ttr.set_from(signer_client.address());
     ethers_ttr.set_chain_id(137);
-    println!("{:?}", ethers_ttr);
     let signature = signer_client.signer().sign_transaction_sync(&ethers_ttr);
     let txn = build_typed_transaction(ttr, signature);
-    println!("-----------");
-    println!("{:?}", txn);
     let block_number = provider_ipc.get_block_number().await?.as_u64();
     let block_number = utils::serialize(&block_number);
 
@@ -183,7 +180,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     println!("Number in result: {:?}", result.len());
-    println!("{:?}", result);
+    println!("{:?}", result[result.len() - 1]);
     Ok(())
 }
 
