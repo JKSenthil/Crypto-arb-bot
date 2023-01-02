@@ -182,36 +182,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mempool_txns = txpool.get_mempool().await;
         let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
-        let mempool_txns: Vec<TypedTransaction> = mempool_txns
-            .into_iter()
-            .map(|t| TypedTransaction::from(t))
-            .collect();
+        // let mempool_txns: Vec<TypedTransaction> = mempool_txns
+        //     .into_iter()
+        //     .map(|t| TypedTransaction::from(t))
+        //     .collect();
 
-        let mut txns = current_block.transactions;
+        let ethers_txn = mempool_txns[0];
+        let our_txn = TypedTransaction::from(ethers_txn);
+
+        println!("{:#?}", ethers_txn);
+        println!("{:#?}", our_txn);
+        println!("----------------");
+        println!("EthersTxnRLP: {:?}", ethers_txn.rlp());
+        println!("LocalTxnRLP: {:?}", rlp::encode(&our_txn));
+        break;
+
+        // let mut txns = current_block.transactions;
         // let rlp_bytes = txn.rlp();
         // let txn: TypedTransaction = rlp::decode(&rlp_bytes).unwrap();
-        txns.extend(mempool_txns);
-        let sim_block: Block = Block::new(current_block.header.into(), txns, current_block.ommers);
-        let sim_block_rlp = rlp::encode(&sim_block);
-        let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
-        let sim_block_rlp = utils::serialize(&sim_block_rlp);
 
-        let config = TraceConfig {
-            disable_storage: true,
-            disable_stack: true,
-            enable_memory: false,
-            enable_return_data: false,
-            tracer: "callTracer".to_string(),
-            tracer_config: Some(TracerConfig {
-                only_top_call: true,
-                with_log: false,
-            }),
-        };
-        let config = utils::serialize(&config);
-        let now = Instant::now();
-        let result = provider_ipc
-            .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
-            .await?;
+        // txns.extend(mempool_txns);
+        // let sim_block: Block = Block::new(current_block.header.into(), txns, current_block.ommers);
+        // let sim_block_rlp = rlp::encode(&sim_block);
+        // let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
+        // let sim_block_rlp = utils::serialize(&sim_block_rlp);
+
+        // let config = TraceConfig {
+        //     disable_storage: true,
+        //     disable_stack: true,
+        //     enable_memory: false,
+        //     enable_return_data: false,
+        //     tracer: "callTracer".to_string(),
+        //     tracer_config: Some(TracerConfig {
+        //         only_top_call: true,
+        //         with_log: false,
+        //     }),
+        // };
+        // let config = utils::serialize(&config);
+        // let now = Instant::now();
+        // let result = provider_ipc
+        //     .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
+        //     .await?;
         println!("Time elapsed: {}ms", now.elapsed().as_millis());
         println!("Number in result: {:?}", result.len());
     }
