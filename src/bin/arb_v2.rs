@@ -153,7 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(txpool.clone().stream_mempool());
 
     // wait 10 seconds for local mempool to populate
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     // TODO: filter out transactions with gas below 22916
 
@@ -184,10 +184,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
         let mempool_txns: Vec<TypedTransaction> = mempool_txns
             .into_iter()
-            .map(|t| TypedTransaction::from(t))
+            .map(|t| {
+                let rlp_bytes = t.rlp();
+                let txn: TypedTransaction = rlp::decode(&rlp_bytes).unwrap();
+                txn
+            })
             .collect();
 
         let mut txns = current_block.transactions;
+        // let rlp_bytes = txn.rlp();
+        // let txn: TypedTransaction = rlp::decode(&rlp_bytes).unwrap();
         txns.extend(mempool_txns);
         let sim_block: Block = Block::new(current_block.header.into(), txns, current_block.ommers);
         let sim_block_rlp = rlp::encode(&sim_block);
