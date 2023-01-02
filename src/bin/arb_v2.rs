@@ -1,15 +1,16 @@
 use lazy_static::lazy_static;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use dotenv::dotenv;
 use ethers::{
     prelude::SignerMiddleware,
     providers::{Middleware, Provider},
     signers::{LocalWallet, Signer},
-    types::{Bytes, Transaction, U256},
+    types::{Address, Bytes, Transaction, U256},
     utils::{self, rlp},
 };
 use futures_util::StreamExt;
+use tokio::time::Duration;
 use tsuki::{tx_pool::TxPool, utils::block::Block};
 
 lazy_static! {
@@ -65,19 +66,30 @@ fn compute_next_base_fee(current_base_fee: U256, gas_used: U256, gas_limit: U256
     }
 }
 
+fn group_txns_by_sender(mempool_txns: Vec<Transaction>) -> HashMap<Address, Vec<Transaction>> {
+    let mut mapping: HashMap<Address, Vec<Transaction>> = HashMap::new();
+    for txn in mempool_txns {
+        let sender_address = txn.from;
+        if !mapping.contains_key(&sender_address) {
+            mapping.insert(sender_address, Vec::new());
+        }
+        mapping.get_mut(&sender_address).unwrap().push(txn);
+    }
+
+    // sort by nonce
+    for txns in mapping.values_mut() {
+        txns.sort_by(|a, b| a.nonce.cmp(&b.nonce));
+    }
+    return mapping;
+}
+
 fn predict_next_block(current_block: Block, mempool_txns: Vec<Transaction>) -> Option<Block> {
-    // TODO predict next block gas_limit
     let next_base_fee = compute_next_base_fee(
         current_block.header.base_fee_per_gas.unwrap(),
         current_block.header.gas_used,
         current_block.header.gas_limit,
     );
-    // current_block.header.
-    // let base_fee = U256::zero();
-    // let mempool_txns: Vec<Transaction> = mempool_txns
-    //     .into_iter()
-    //     .filter(|txn| txn.max_fee_per_gas.unwrap() > base_fee)
-    //     .collect();
+    let next_gas_limit = compute_next_gas_limit(current_block.header.gas_limit);
 
     None
 }
@@ -99,7 +111,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let txpool = Arc::new(txpool);
     tokio::spawn(txpool.clone().stream_mempool());
 
-    // TODO wait 20 seconds for mempool to populate
+    // wait 10 seconds for local mempool to populate
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
         /*
@@ -108,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         3) If arb, then execute transaction
         */
 
-        println!("actual gas limit: {}", block.gas_limit);
+        break;
 
         // 1) predict next block
         let block_number = block.number.unwrap();
@@ -119,9 +133,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
         let current_block: Block = rlp::decode(&bytes)?;
-        let next_gas_limit = compute_next_gas_limit(current_block.header.gas_limit);
-        println!("predicted next gas limit: {}", next_gas_limit);
-        // let next_block = predict_next_block(current_block, txpool.get_mempool().await);
     }
     Ok(())
 }

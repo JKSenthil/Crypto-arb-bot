@@ -169,7 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         UniswapV2::SUSHISWAP.get_router_address(),
         signer_client,
         gas_price,
-        nonce,
+        nonce + 10,
     );
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
