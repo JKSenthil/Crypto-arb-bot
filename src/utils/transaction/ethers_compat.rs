@@ -97,6 +97,11 @@ impl From<TypedTransactionRequest> for EthersTypedTransactionRequest {
 impl From<EthersTransaction> for TypedTransaction {
     fn from(transaction: EthersTransaction) -> TypedTransaction {
         if let Some(_) = transaction.max_fee_per_gas {
+            let parity = if transaction.v == U64::one() {
+                true
+            } else {
+                false
+            };
             return TypedTransaction::EIP1559(EIP1559Transaction {
                 chain_id: 137,
                 nonce: transaction.nonce,
@@ -107,7 +112,7 @@ impl From<EthersTransaction> for TypedTransaction {
                 value: transaction.value,
                 input: transaction.input,
                 access_list: transaction.access_list.unwrap(),
-                odd_y_parity: false,
+                odd_y_parity: parity,
                 r: {
                     let mut rarr = [0u8; 32];
                     transaction.r.to_big_endian(&mut rarr);

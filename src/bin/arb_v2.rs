@@ -1,4 +1,4 @@
-use lazy_static::lazy_static;
+use lazy_static::{__Deref, lazy_static};
 use std::{
     collections::{BinaryHeap, HashMap},
     sync::Arc,
@@ -194,7 +194,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("{:#?}", our_txn);
         println!("----------------");
         println!("EthersTxnRLP: {:?}", ethers_txn.rlp());
-        println!("LocalTxnRLP: {:?}", rlp::encode(&our_txn));
+        println!(
+            "LocalTxnRLP: {:?}",
+            Bytes::from(rlp::encode(&our_txn).freeze())
+        );
         break;
 
         // let mut txns = current_block.transactions;
