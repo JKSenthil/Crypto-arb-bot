@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         3) If arb, then execute transaction
         */
 
-        println!("actual base fee: {}", block.base_fee_per_gas.unwrap());
+        println!("actual gas limit: {}", block.gas_limit);
 
         // 1) predict next block
         let block_number = block.number.unwrap();
@@ -119,12 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
         let current_block: Block = rlp::decode(&bytes)?;
-        let next_base_fee = compute_next_base_fee(
-            current_block.header.base_fee_per_gas.unwrap(),
-            current_block.header.gas_used,
-            current_block.header.gas_limit,
-        );
-        println!("predicted base fee: {}", next_base_fee);
+        let next_gas_limit = compute_next_gas_limit(current_block.header.gas_limit);
+        println!("predicted gas limit: {}", next_gas_limit);
         // let next_block = predict_next_block(current_block, txpool.get_mempool().await);
     }
     Ok(())
