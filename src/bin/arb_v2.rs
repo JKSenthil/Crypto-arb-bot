@@ -187,8 +187,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         //     .map(|t| TypedTransaction::from(t))
         //     .collect();
 
-        let ethers_txn = mempool_txns[0];
-        let our_txn = TypedTransaction::from(ethers_txn);
+        let ethers_txn = &mempool_txns[0];
+        let our_txn = TypedTransaction::from(ethers_txn.clone());
 
         println!("{:#?}", ethers_txn);
         println!("{:#?}", our_txn);
@@ -223,8 +223,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // let result = provider_ipc
         //     .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
         //     .await?;
-        println!("Time elapsed: {}ms", now.elapsed().as_millis());
-        println!("Number in result: {:?}", result.len());
+        // println!("Time elapsed: {}ms", now.elapsed().as_millis());
+        // println!("Number in result: {:?}", result.len());
     }
     Ok(())
 }
