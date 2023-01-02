@@ -15,6 +15,31 @@ use tsuki::{tx_pool::TxPool, utils::block::Block};
 lazy_static! {
     static ref ELASTICITY_MULTIPLIER: U256 = U256::from(2);
     static ref BASE_FEE_CHANGE_DENOMINATOR: U256 = U256::from(8);
+    static ref MIN_GAS_LIMIT: U256 = U256::from(500);
+    static ref GAS_LIMIT_BOUND_DIVISOR: U256 = U256::from(1024);
+    static ref DESIRED_GAS_LIMIT: U256 = U256::from(30_000_000);
+}
+
+fn compute_next_gas_limit(current_gas_limit: U256) -> U256 {
+    let delta = current_gas_limit
+        .checked_div(*GAS_LIMIT_BOUND_DIVISOR)
+        .unwrap()
+        - U256::one();
+    let mut limit = current_gas_limit;
+    if current_gas_limit < *DESIRED_GAS_LIMIT {
+        limit = current_gas_limit + delta;
+        if limit > *DESIRED_GAS_LIMIT {
+            limit = *DESIRED_GAS_LIMIT;
+        }
+        return limit;
+    } else if current_gas_limit > *DESIRED_GAS_LIMIT {
+        limit = current_gas_limit - delta;
+        if limit < *DESIRED_GAS_LIMIT {
+            limit = *DESIRED_GAS_LIMIT;
+        }
+        return limit;
+    }
+    return limit;
 }
 
 fn compute_next_base_fee(current_base_fee: U256, gas_used: U256, gas_limit: U256) -> U256 {
@@ -34,17 +59,19 @@ fn compute_next_base_fee(current_base_fee: U256, gas_used: U256, gas_limit: U256
         let gas_used_delta = gas_target - gas_used;
         let x = current_base_fee.checked_mul(gas_used_delta).unwrap();
         let y = x.checked_div(gas_target).unwrap();
-        let base_fee_delta = U256::max(
-            y.checked_div(*BASE_FEE_CHANGE_DENOMINATOR).unwrap(),
-            U256::one(),
-        );
+        let base_fee_delta = y.checked_div(*BASE_FEE_CHANGE_DENOMINATOR).unwrap();
+
         return current_base_fee - base_fee_delta;
     }
 }
 
 fn predict_next_block(current_block: Block, mempool_txns: Vec<Transaction>) -> Option<Block> {
     // TODO predict next block gas_limit
-    // TODO compute next base_fee
+    let next_base_fee = compute_next_base_fee(
+        current_block.header.base_fee_per_gas.unwrap(),
+        current_block.header.gas_used,
+        current_block.header.gas_limit,
+    );
     // current_block.header.
     // let base_fee = U256::zero();
     // let mempool_txns: Vec<Transaction> = mempool_txns
@@ -72,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let txpool = Arc::new(txpool);
     tokio::spawn(txpool.clone().stream_mempool());
 
-    // TODO wait 20 seconds
+    // TODO wait 20 seconds for mempool to populate
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
         /*
