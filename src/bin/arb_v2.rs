@@ -186,7 +186,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .into_iter()
             .map(|t| {
                 let rlp_bytes = t.rlp();
-                let txn: TypedTransaction = rlp::decode(&rlp_bytes).unwrap();
+                let txn: TypedTransaction;
+                if let Some(_) = t.max_fee_per_gas {
+                    txn = rlp::decode(&rlp_bytes[1..]).unwrap();
+                } else {
+                    txn = rlp::decode(&rlp_bytes).unwrap();
+                }
                 txn
             })
             .collect();
