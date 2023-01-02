@@ -1,8 +1,8 @@
 //! ethers compatibility, this is mainly necessary so we can use all of `ethers` signers
 
 use super::{
-    EIP1559TransactionRequest, EIP2930TransactionRequest, EthTransactionRequest,
-    LegacyTransactionRequest, TypedTransaction, TypedTransactionRequest,
+    EIP1559Transaction, EIP1559TransactionRequest, EIP2930TransactionRequest,
+    EthTransactionRequest, LegacyTransactionRequest, TypedTransaction, TypedTransactionRequest,
 };
 use ethers::types::{
     transaction::{
@@ -11,7 +11,7 @@ use ethers::types::{
         eip2930::Eip2930TransactionRequest as EthersEip2930TransactionRequest,
     },
     Address, NameOrAddress, Transaction as EthersTransaction,
-    TransactionRequest as EthersLegacyTransactionRequest, TransactionRequest, U256, U64,
+    TransactionRequest as EthersLegacyTransactionRequest, TransactionRequest, H256, U256, U64,
 };
 
 impl From<TypedTransactionRequest> for EthersTypedTransactionRequest {
@@ -89,6 +89,34 @@ impl From<TypedTransactionRequest> for EthersTypedTransactionRequest {
                 })
             }
         }
+    }
+}
+
+// TODO accomodate legacy
+impl From<EthersTransaction> for TypedTransaction {
+    fn from(transaction: EthersTransaction) -> TypedTransaction {
+        TypedTransaction::EIP1559(EIP1559Transaction {
+            chain_id: transaction.chain_id.unwrap().as_u64(),
+            nonce: transaction.nonce,
+            max_priority_fee_per_gas: transaction.max_priority_fee_per_gas.unwrap(),
+            max_fee_per_gas: transaction.max_fee_per_gas.unwrap(),
+            gas_limit: transaction.gas,
+            kind: super::TransactionKind::Call(Address::zero()),
+            value: transaction.value,
+            input: transaction.input,
+            access_list: transaction.access_list.unwrap(),
+            odd_y_parity: false,
+            r: {
+                let mut rarr = [0u8; 32];
+                transaction.r.to_big_endian(&mut rarr);
+                H256::from(rarr)
+            },
+            s: {
+                let mut rarr = [0u8; 32];
+                transaction.s.to_big_endian(&mut rarr);
+                H256::from(rarr)
+            },
+        })
     }
 }
 

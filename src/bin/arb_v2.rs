@@ -1,17 +1,29 @@
 use lazy_static::lazy_static;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BinaryHeap, HashMap},
+    sync::Arc,
+    time::Instant,
+};
 
 use dotenv::dotenv;
 use ethers::{
-    prelude::SignerMiddleware,
-    providers::{Middleware, Provider},
-    signers::{LocalWallet, Signer},
+    prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
+    providers::{Ipc, Middleware, Provider},
+    signers::{LocalWallet, Signer, Wallet},
     types::{Address, Bytes, Transaction, U256},
-    utils::{self, rlp},
+    utils::{self, hex, rlp},
 };
 use futures_util::StreamExt;
 use tokio::time::Duration;
-use tsuki::{tx_pool::TxPool, utils::block::Block};
+use tsuki::{
+    tx_pool::TxPool,
+    utils::{
+        block::Block,
+        serialize_structs::{Res, TraceConfig, TracerConfig},
+        transaction::{build_typed_transaction, EthTransactionRequest, TypedTransaction},
+        txstructs::TxLinkedList,
+    },
+};
 
 lazy_static! {
     static ref ELASTICITY_MULTIPLIER: U256 = U256::from(2);
@@ -66,32 +78,61 @@ fn compute_next_base_fee(current_base_fee: U256, gas_used: U256, gas_limit: U256
     }
 }
 
-fn group_txns_by_sender(mempool_txns: Vec<Transaction>) -> HashMap<Address, Vec<Transaction>> {
-    let mut mapping: HashMap<Address, Vec<Transaction>> = HashMap::new();
+fn heapify_mempool(mut mempool_txns: Vec<Transaction>) -> BinaryHeap<TxLinkedList> {
+    mempool_txns.sort_by(|a, b| a.nonce.cmp(&b.nonce));
+    let mut mapping: HashMap<Address, TxLinkedList> = HashMap::new();
     for txn in mempool_txns {
         let sender_address = txn.from;
         if !mapping.contains_key(&sender_address) {
-            mapping.insert(sender_address, Vec::new());
+            mapping.insert(sender_address, TxLinkedList::new());
         }
-        mapping.get_mut(&sender_address).unwrap().push(txn);
+        mapping
+            .get_mut(&sender_address)
+            .unwrap()
+            .linked_list
+            .push_back(txn);
+    }
+    let mut heap = BinaryHeap::<TxLinkedList>::new();
+
+    for (_, lls) in mapping {
+        heap.push(lls);
     }
 
-    // sort by nonce
-    for txns in mapping.values_mut() {
-        txns.sort_by(|a, b| a.nonce.cmp(&b.nonce));
-    }
-    return mapping;
+    return heap;
 }
 
-fn predict_next_block(current_block: Block, mempool_txns: Vec<Transaction>) -> Option<Block> {
-    let next_base_fee = compute_next_base_fee(
-        current_block.header.base_fee_per_gas.unwrap(),
-        current_block.header.gas_used,
-        current_block.header.gas_limit,
-    );
-    let next_gas_limit = compute_next_gas_limit(current_block.header.gas_limit);
+// https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/miner/worker.go#L942
+fn filter_mempool(mempool_txns: Vec<Transaction>, next_base_fee: U256) -> Vec<Transaction> {
+    let mut heap = heapify_mempool(mempool_txns);
+    let mut final_txns: Vec<Transaction> = Vec::new();
+    while heap.len() != 0 {
+        let mut ll = heap.pop().unwrap();
+        let txn = ll.linked_list.pop_front().unwrap();
+        let gas_fee = match txn.max_fee_per_gas {
+            Some(val) => val,
+            None => txn.gas_price.unwrap(),
+        };
 
-    None
+        if gas_fee < next_base_fee || gas_fee < U256::from(22916) {
+            continue;
+        }
+
+        // https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/core/types/transaction.go#L426
+        if let Some(max_priority_gas_fee) = txn.max_priority_fee_per_gas {
+            let tip = txn.max_fee_per_gas.unwrap() - next_base_fee;
+            if max_priority_gas_fee < tip {
+                continue;
+            }
+        }
+
+        if let Some(txn_next) = ll.linked_list.front() {
+            if txn.nonce + 1 == txn_next.nonce {
+                heap.push(ll);
+            }
+        }
+        final_txns.push(txn);
+    }
+    final_txns
 }
 
 #[tokio::main]
@@ -124,12 +165,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         3) If arb, then execute transaction
         */
 
-        let mempool_txns = txpool.get_mempool().await;
-        let mapping = group_txns_by_sender(mempool_txns);
-        println!("{:#?}", mapping);
-
-        break;
-
         // 1) predict next block
         let block_number = block.number.unwrap();
         let block_number = utils::serialize(&(block_number.as_u64()));
@@ -137,8 +172,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let bytes = provider_ipc
             .request::<_, Bytes>("debug_getBlockRlp", [block_number])
             .await?;
-
         let current_block: Block = rlp::decode(&bytes)?;
+
+        let next_base_fee = compute_next_base_fee(
+            current_block.header.base_fee_per_gas.unwrap(),
+            current_block.header.gas_used,
+            current_block.header.gas_limit,
+        );
+
+        let mempool_txns = txpool.get_mempool().await;
+        let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
+        let mempool_txns: Vec<TypedTransaction> = mempool_txns
+            .into_iter()
+            .map(|t| TypedTransaction::from(t))
+            .collect();
+
+        let mut txns = current_block.transactions;
+        txns.extend(mempool_txns);
+        let sim_block: Block = Block::new(current_block.header.into(), txns, current_block.ommers);
+        let sim_block_rlp = rlp::encode(&sim_block);
+        let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
+        let sim_block_rlp = utils::serialize(&sim_block_rlp);
+
+        let config = TraceConfig {
+            disable_storage: true,
+            disable_stack: true,
+            enable_memory: false,
+            enable_return_data: false,
+            tracer: "callTracer".to_string(),
+            tracer_config: Some(TracerConfig {
+                only_top_call: true,
+                with_log: false,
+            }),
+        };
+        let config = utils::serialize(&config);
+        let now = Instant::now();
+        let result = provider_ipc
+            .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
+            .await?;
+        println!("Time elapsed: {}ms", now.elapsed().as_millis());
+        println!("Number in result: {:?}", result.len());
     }
     Ok(())
 }
