@@ -20,28 +20,28 @@ lazy_static! {
     static ref DESIRED_GAS_LIMIT: U256 = U256::from(30_000_000);
 }
 
+// https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/core/block_validator.go#L108
 fn compute_next_gas_limit(current_gas_limit: U256) -> U256 {
     let delta = current_gas_limit
         .checked_div(*GAS_LIMIT_BOUND_DIVISOR)
         .unwrap()
-        - U256::one();
+        - 1;
     let mut limit = current_gas_limit;
     if current_gas_limit < *DESIRED_GAS_LIMIT {
         limit = current_gas_limit + delta;
         if limit > *DESIRED_GAS_LIMIT {
             limit = *DESIRED_GAS_LIMIT;
         }
-        return limit;
     } else if current_gas_limit > *DESIRED_GAS_LIMIT {
         limit = current_gas_limit - delta;
         if limit < *DESIRED_GAS_LIMIT {
             limit = *DESIRED_GAS_LIMIT;
         }
-        return limit;
     }
     return limit;
 }
 
+// https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/consensus/misc/eip1559.go#L99
 fn compute_next_base_fee(current_base_fee: U256, gas_used: U256, gas_limit: U256) -> U256 {
     let gas_target = gas_limit.checked_div(*ELASTICITY_MULTIPLIER).unwrap();
     if gas_used == gas_target {
@@ -120,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let current_block: Block = rlp::decode(&bytes)?;
         let next_gas_limit = compute_next_gas_limit(current_block.header.gas_limit);
-        println!("predicted gas limit: {}", next_gas_limit);
+        println!("predicted next gas limit: {}", next_gas_limit);
         // let next_block = predict_next_block(current_block, txpool.get_mempool().await);
     }
     Ok(())
