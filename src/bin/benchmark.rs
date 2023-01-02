@@ -105,7 +105,7 @@ fn gen_txn(
         gas_price: None,
         max_fee_per_gas: Some(gas_price),
         max_priority_fee_per_gas: Some(gas_price),
-        gas: Some(500_000.into()),
+        gas: Some(100.into()),
         value: Some(0.into()),
         data: txn.data.clone(),
         nonce: Some(nonce),
@@ -169,7 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         UniswapV2::SUSHISWAP.get_router_address(),
         signer_client,
         gas_price,
-        nonce + 10,
+        nonce,
     );
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
