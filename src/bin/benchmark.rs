@@ -105,7 +105,7 @@ fn gen_txn(
         gas_price: None,
         max_fee_per_gas: Some(gas_price),
         max_priority_fee_per_gas: Some(gas_price),
-        gas: Some(22916.into()),
+        gas: Some(500_000.into()),
         value: Some(0.into()),
         data: txn.data.clone(),
         nonce: Some(nonce),

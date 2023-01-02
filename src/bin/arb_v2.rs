@@ -114,6 +114,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // wait 10 seconds for local mempool to populate
     tokio::time::sleep(Duration::from_secs(10)).await;
 
+    // TODO: filter out transactions with gas below 22916
+
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
         /*
@@ -121,6 +123,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         2) simulate next block w/ our transactions
         3) If arb, then execute transaction
         */
+
+        let mempool_txns = txpool.get_mempool().await;
+        let mapping = group_txns_by_sender(mempool_txns);
+        println!("{:#?}", mapping);
 
         break;
 
