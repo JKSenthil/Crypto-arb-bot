@@ -93,7 +93,7 @@ impl From<TypedTransactionRequest> for EthersTypedTransactionRequest {
     }
 }
 
-// TODO accomodate legacy
+// TODO fix this somehow?
 impl From<EthersTransaction> for TypedTransaction {
     fn from(transaction: EthersTransaction) -> TypedTransaction {
         if let Some(_) = transaction.max_fee_per_gas {
@@ -103,7 +103,7 @@ impl From<EthersTransaction> for TypedTransaction {
                 max_priority_fee_per_gas: transaction.max_priority_fee_per_gas.unwrap(),
                 max_fee_per_gas: transaction.max_fee_per_gas.unwrap(),
                 gas_limit: transaction.gas,
-                kind: super::TransactionKind::Call(Address::zero()),
+                kind: super::TransactionKind::Call(transaction.to.unwrap()),
                 value: transaction.value,
                 input: transaction.input,
                 access_list: transaction.access_list.unwrap(),
@@ -124,7 +124,7 @@ impl From<EthersTransaction> for TypedTransaction {
             nonce: transaction.nonce,
             gas_price: transaction.gas_price.unwrap(),
             gas_limit: transaction.gas,
-            kind: super::TransactionKind::Call(Address::zero()),
+            kind: super::TransactionKind::Call(transaction.to.unwrap()),
             value: transaction.value,
             input: transaction.input,
             signature: Signature {
