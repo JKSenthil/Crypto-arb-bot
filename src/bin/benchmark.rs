@@ -134,7 +134,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(txpool.clone().stream_mempool());
     tokio::time::sleep(Duration::from_secs(2)).await;
     let transactions = txpool.get_mempool().await;
-
     let mut batch = BatchRequest::new();
     for txn in transactions {
         batch
@@ -142,7 +141,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
     }
     let mut responses = batch_provider_ipc.execute_batch(&mut batch).await?;
-    println!("{:#?}", responses);
+    while let Some(Ok(num)) = responses.next_response::<U256>() {
+        println!("{}", num);
+    }
     Ok(())
 }
 
