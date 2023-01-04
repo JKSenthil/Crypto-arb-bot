@@ -135,14 +135,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::time::sleep(Duration::from_secs(2)).await;
     let transactions = txpool.get_mempool().await;
     let mut batch = BatchRequest::new();
-    for txn in transactions {
+    for txn in &transactions {
         batch
             .add_request("eth_getTransactionCount", (txn.from, "latest"))
             .unwrap();
     }
+    let mut i = 0;
     let mut responses = batch_provider_ipc.execute_batch(&mut batch).await?;
     while let Some(Ok(num)) = responses.next_response::<U256>() {
-        println!("{}", num);
+        println!("{:?}:{}", transactions[i].from, num);
+        i += 1;
     }
     Ok(())
 }
