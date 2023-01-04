@@ -8,9 +8,9 @@ use std::{
 use dotenv::dotenv;
 use ethers::{
     prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
-    providers::{Ipc, Middleware, Provider},
+    providers::{Middleware, Provider},
     signers::{LocalWallet, Signer, Wallet},
-    types::{Address, Bytes, Transaction, U256},
+    types::{Address, Bytes, Transaction, H256, U256},
     utils::{self, hex, rlp},
 };
 use futures_util::StreamExt;
@@ -18,6 +18,7 @@ use tokio::time::Duration;
 use tsuki::{
     tx_pool::TxPool,
     utils::{
+        batch::BatchProvider,
         block::Block,
         serialize_structs::{Res, TraceConfig, TracerConfig},
         transaction::{build_typed_transaction, EthTransactionRequest, TypedTransaction},
@@ -140,6 +141,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
+    let batch_provider_ipc = BatchProvider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
 
     let wallet = std::env::var("PRIVATE_KEY")
         .unwrap()
@@ -163,9 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         3) If arb, then execute transaction
         */
 
-        // TODO rmr to remove txns in mempool
-
-        // 1) predict next block
+        // pull next block details
         let block_number = block.number.unwrap();
         let block_number = utils::serialize(&(block_number.as_u64()));
 
@@ -180,57 +180,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             current_block.header.gas_limit,
         );
 
-        let mempool_txns = txpool.get_mempool().await;
-        let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
-        let mempool_txns: Vec<TypedTransaction> = mempool_txns
-            .into_iter()
-            .map(|t| TypedTransaction::from(t))
-            .collect();
+        // update local mempool
+        let mut txn_hashes: Vec<H256> = Vec::new();
+        for txn in &current_block.transactions {
+            txn_hashes.push(txn.hash());
+        }
+        let _num_removed = txpool.remove_transactions(txn_hashes).await;
+        println!("Num txns removed from mempool: {}", _num_removed);
 
-        // let ethers_txn = &mempool_txns[0];
-        // let our_txn = TypedTransaction::from(ethers_txn.clone());
+        // let mempool_txns = txpool.get_mempool().await;
+        // let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
+        // let mempool_txns: Vec<TypedTransaction> = mempool_txns
+        //     .into_iter()
+        //     .map(|t| TypedTransaction::from(t))
+        //     .collect();
 
-        // println!("{:#?}", ethers_txn);
-        // println!("{:#?}", our_txn);
-        // println!("----------------");
-        // println!("EthersTxnRLP: {:?}", ethers_txn.rlp());
-        // println!(
-        //     "LocalTxnRLP: {:?}",
-        //     Bytes::from(rlp::encode(&our_txn).freeze())
-        // );
+        // let mut txns = current_block.transactions;
 
-        // break;
+        // txns.extend(mempool_txns);
+        // let sim_block: Block = Block::new(current_block.header.into(), txns, current_block.ommers);
+        // let sim_block_rlp = rlp::encode(&sim_block);
+        // let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
+        // let sim_block_rlp = utils::serialize(&sim_block_rlp);
 
-        let mut txns = current_block.transactions;
-        // let rlp_bytes = txn.rlp();
-        // let txn: TypedTransaction = rlp::decode(&rlp_bytes).unwrap();
+        // let config = TraceConfig {
+        //     disable_storage: true,
+        //     disable_stack: true,
+        //     enable_memory: false,
+        //     enable_return_data: false,
+        //     tracer: "callTracer".to_string(),
+        //     tracer_config: Some(TracerConfig {
+        //         only_top_call: true,
+        //         with_log: false,
+        //     }),
+        // };
+        // let config = utils::serialize(&config);
 
-        txns.extend(mempool_txns);
-        let sim_block: Block = Block::new(current_block.header.into(), txns, current_block.ommers);
-        let sim_block_rlp = rlp::encode(&sim_block);
-        let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
-        let sim_block_rlp = utils::serialize(&sim_block_rlp);
-
-        let config = TraceConfig {
-            disable_storage: true,
-            disable_stack: true,
-            enable_memory: false,
-            enable_return_data: false,
-            tracer: "callTracer".to_string(),
-            tracer_config: Some(TracerConfig {
-                only_top_call: true,
-                with_log: false,
-            }),
-        };
-        let config = utils::serialize(&config);
-
-        // provider_ipc.get_transaction_count(from, block);
-        let now = Instant::now();
-        let result = provider_ipc
-            .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
-            .await?;
-        println!("Time elapsed: {}ms", now.elapsed().as_millis());
-        println!("Number in result: {:?}", result.len());
+        // // provider_ipc.get_transaction_count(from, block);
+        // let now = Instant::now();
+        // let result = provider_ipc
+        //     .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
+        //     .await?;
+        // println!("Time elapsed: {}ms", now.elapsed().as_millis());
+        // println!("Number in result: {:?}", result.len());
     }
     Ok(())
 }

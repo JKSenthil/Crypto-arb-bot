@@ -52,10 +52,10 @@ impl<M: Middleware + Clone> TxPool<M> {
         return gas_prices[idx];
     }
 
-    pub async fn remove_transactions(self: Arc<TxPool<M>>, txn_hashs: Vec<H256>) -> usize {
+    pub async fn remove_transactions(&self, txn_hashes: Vec<H256>) -> usize {
         let mut num_removed: usize = 0;
         let mut lru_cache = self.lru_cache.write().await;
-        for txn_hash in txn_hashs {
+        for txn_hash in txn_hashes {
             match lru_cache.pop(&txn_hash) {
                 Some(_) => {
                     num_removed += 1;
