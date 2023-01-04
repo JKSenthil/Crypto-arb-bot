@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod block;
 pub mod matrix;
 pub mod multicall;

@@ -15,11 +15,14 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use tsuki::constants::protocol::UniswapV2;
 use tsuki::constants::token::ERC20Token;
 use tsuki::tx_pool::TxPool;
 use tsuki::uniswapV2::UniswapV2Client;
+use tsuki::utils::batch::common::BatchRequest;
+use tsuki::utils::batch::BatchProvider;
 use tsuki::utils::block::{self, Block, PartialHeader};
 use tsuki::utils::transaction::{
     build_typed_transaction, EIP1559Transaction, EIP2930Transaction, EthTransactionRequest,
@@ -123,6 +126,27 @@ fn gen_txn(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Arc::new(provider_ipc);
+    let batch_provider_ipc = BatchProvider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let txpool = TxPool::init(provider_ipc.clone(), 1000);
+    let txpool = Arc::new(txpool);
+    tokio::spawn(txpool.clone().stream_mempool());
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let transactions = txpool.get_mempool().await;
+
+    let mut batch = BatchRequest::new();
+    for txn in transactions {
+        batch
+            .add_request("eth_getTransactionCount", (txn.from, "latest"))
+            .unwrap();
+    }
+    let mut responses = batch_provider_ipc.execute_batch(&mut batch).await?;
+    println!("{:#?}", responses);
+    Ok(())
+}
+
+async fn old_main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);

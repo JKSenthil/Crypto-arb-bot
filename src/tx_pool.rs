@@ -2,7 +2,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use ethers::{
     providers::{Middleware, PubsubClient},
-    types::{Block, Transaction, H256, U256, U64},
+    types::{Transaction, H256, U256},
 };
 use futures_util::StreamExt;
 use lru::LruCache;
@@ -52,47 +52,36 @@ impl<M: Middleware + Clone> TxPool<M> {
         return gas_prices[idx];
     }
 
+    pub async fn remove_transactions(self: Arc<TxPool<M>>, txn_hashs: Vec<H256>) -> usize {
+        let mut num_removed: usize = 0;
+        let mut lru_cache = self.lru_cache.write().await;
+        for txn_hash in txn_hashs {
+            match lru_cache.pop(&txn_hash) {
+                Some(_) => {
+                    num_removed += 1;
+                }
+                _ => {}
+            };
+        }
+        return num_removed;
+    }
+
     pub async fn stream_mempool(self: Arc<TxPool<M>>)
     where
         <M as Middleware>::Provider: PubsubClient,
     {
-        let mut block_stream = self.provider.subscribe_blocks().await.unwrap().fuse();
         let mut pending_tx_stream = self
             .provider
             .subscribe_pending_txs()
             .await
             .unwrap()
-            .transactions_unordered(16) // TODO: what n is ideal?
-            .fuse();
+            .transactions_unordered(16); // TODO: what n is ideal?
 
-        loop {
-            futures_util::select! {
-                block = block_stream.next() => {
-                    let block: Block<H256> = block.unwrap();
-                    let txns = self.provider.get_block(block.hash.unwrap()).await.unwrap().unwrap().transactions;
-                    // let num_txns_in_block = txns.len();
-                    let mut lru_cache = self.lru_cache.write().await;
-                    // let mut count: usize = 0;
-                    for tx_hash in txns {
-                        lru_cache.pop(&tx_hash);
-                    }
-                    // println!("----------------------");
-                    // println!("Mempool txn count: {:?}", lru_cache.len());
-                    // println!("{}/{} hit rate in mempool", count, num_txns_in_block);
-                },
-                pending_tx = pending_tx_stream.next() => {
-                    match pending_tx.unwrap() {
-                        Ok(pending_tx) => {
-                            // Move to seperate function to determine gas prices
-                            // let gas_price = pending_tx.gas_price.unwrap_or(U256::zero());
-                            // let max_fee_per_gas = pending_tx.max_fee_per_gas.unwrap_or(U256::zero());
-                            // let fee = if gas_price > max_fee_per_gas {gas_price} else {max_fee_per_gas};
-                            self.lru_cache.write().await.push(pending_tx.hash, pending_tx);
-                        },
-                        _ => {}
-                    };
-                }
-            }
+        while let Some(Ok(pending_txn)) = pending_tx_stream.next().await {
+            self.lru_cache
+                .write()
+                .await
+                .push(pending_txn.hash, pending_txn);
         }
     }
 }

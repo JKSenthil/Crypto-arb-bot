@@ -1,4 +1,4 @@
-use lazy_static::{__Deref, lazy_static};
+use lazy_static::lazy_static;
 use std::{
     collections::{BinaryHeap, HashMap},
     sync::Arc,
@@ -155,8 +155,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // wait 10 seconds for local mempool to populate
     tokio::time::sleep(Duration::from_secs(3)).await;
 
-    // TODO: filter out transactions with gas below 22916
-
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
         /*
@@ -164,6 +162,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         2) simulate next block w/ our transactions
         3) If arb, then execute transaction
         */
+
+        // TODO rmr to remove txns in mempool
 
         // 1) predict next block
         let block_number = block.number.unwrap();
@@ -223,6 +223,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
         };
         let config = utils::serialize(&config);
+
+        // provider_ipc.get_transaction_count(from, block);
         let now = Instant::now();
         let result = provider_ipc
             .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
