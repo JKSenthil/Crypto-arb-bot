@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 use std::{
-    collections::{BinaryHeap, HashMap},
+    collections::{BinaryHeap, HashMap, HashSet},
     sync::Arc,
     time::Instant,
 };
@@ -18,7 +18,7 @@ use tokio::time::Duration;
 use tsuki::{
     tx_pool::TxPool,
     utils::{
-        batch::BatchProvider,
+        batch::{common::BatchRequest, custom_ipc::Ipc, BatchProvider},
         block::Block,
         serialize_structs::{Res, TraceConfig, TracerConfig},
         transaction::{build_typed_transaction, EthTransactionRequest, TypedTransaction},
@@ -136,6 +136,33 @@ fn filter_mempool(mempool_txns: Vec<Transaction>, next_base_fee: U256) -> Vec<Tr
     final_txns
 }
 
+async fn retrieve_account_nonces(
+    batch_provider_ipc: &BatchProvider<Ipc>,
+    txns: &Vec<TypedTransaction>,
+) -> HashMap<Address, U256> {
+    let mut batch = BatchRequest::new();
+    let mut addresses: Vec<Address> = Vec::new();
+    let mut seen: HashSet<Address> = HashSet::new();
+    let mut result: HashMap<Address, U256> = HashMap::new();
+    for txn in txns {
+        let address = txn.recover().unwrap();
+        if !seen.contains(&address) {
+            batch
+                .add_request("eth_getTransactionCount", (address, "latest"))
+                .unwrap();
+            seen.insert(address);
+            addresses.push(address);
+        }
+    }
+    let mut i = 0;
+    let mut responses = batch_provider_ipc.execute_batch(&mut batch).await.unwrap();
+    while let Some(Ok(num)) = responses.next_response::<U256>() {
+        result.insert(addresses[i], num);
+        i += 1;
+    }
+    return result;
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -187,6 +214,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let _num_removed = txpool.remove_transactions(txn_hashes).await;
         println!("Num txns removed from mempool: {}", _num_removed);
+
+        let account_nonces =
+            retrieve_account_nonces(&batch_provider_ipc, &current_block.transactions).await;
 
         // let mempool_txns = txpool.get_mempool().await;
         // let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
