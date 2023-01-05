@@ -129,7 +129,7 @@ impl From<EthersTransaction> for TypedTransaction {
             nonce: transaction.nonce,
             gas_price: transaction.gas_price.unwrap(),
             gas_limit: transaction.gas,
-            kind: super::TransactionKind::Call(Address::zero()),
+            kind: super::TransactionKind::Call(transaction.to.unwrap()),
             value: transaction.value,
             input: transaction.input,
             signature: Signature {
