@@ -107,33 +107,26 @@ fn heapify_mempool(mut mempool_txns: Vec<Transaction>) -> BinaryHeap<TxLinkedLis
 // where if gas limit is reached it ignores the other transactions from same sender (may impact our block predict algorithm)
 fn filter_mempool(
     mempool_txns: Vec<Transaction>,
-    account_nonces: HashMap<Address, U256>,
+    mut account_nonces: HashMap<Address, U256>,
     next_base_fee: U256,
 ) -> (Vec<Transaction>, Vec<Transaction>) {
-    let mut seen: HashSet<Address> = HashSet::new();
     let mut heap = heapify_mempool(mempool_txns);
     let mut rejected_txns: Vec<Transaction> = Vec::new();
     let mut final_txns: Vec<Transaction> = Vec::new();
     while heap.len() != 0 {
         let mut ll = heap.pop().unwrap();
         let txn = ll.linked_list.pop_front().unwrap();
-        if !seen.contains(&txn.from) {
-            seen.insert(txn.from);
-
-            // check account nonce
-            let nonce = account_nonces.get(&txn.from).unwrap();
-            if txn.nonce < *nonce {
-                // nonce too low, ignore txn and reinsert linkedlist into
-                rejected_txns.push(txn);
-                if ll.linked_list.front().is_some() {
-                    heap.push(ll);
-                }
-                continue;
-            } else if txn.nonce > *nonce {
-                // nonce to high, ignore this and all following
-                // transactions from sender by going to top of while loop
-                continue;
+        let current_account_nonce = account_nonces.get(&txn.from).unwrap();
+        if txn.nonce < *current_account_nonce {
+            rejected_txns.push(txn);
+            if ll.linked_list.front().is_some() {
+                heap.push(ll);
             }
+            continue;
+        } else if txn.nonce > *current_account_nonce {
+            continue;
+        } else {
+            account_nonces.insert(txn.from, *current_account_nonce + 1);
         }
 
         let gas_fee = match txn.max_fee_per_gas {
@@ -147,16 +140,14 @@ fn filter_mempool(
 
         // https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/core/types/transaction.go#L426
         if let Some(max_priority_gas_fee) = txn.max_priority_fee_per_gas {
-            let tip = txn.max_fee_per_gas.unwrap() - next_base_fee;
+            let tip = gas_fee - next_base_fee;
             if max_priority_gas_fee < tip {
                 continue;
             }
         }
 
-        if let Some(txn_next) = ll.linked_list.front() {
-            if txn.nonce + 1 == txn_next.nonce {
-                heap.push(ll);
-            }
+        if ll.linked_list.front().is_some() {
+            heap.push(ll);
         }
         final_txns.push(txn);
     }
