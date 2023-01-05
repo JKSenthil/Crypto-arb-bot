@@ -3,23 +3,23 @@ use std::{
     collections::{BinaryHeap, HashMap, HashSet},
     sync::Arc,
     time::Instant,
+    vec,
 };
 
 use dotenv::dotenv;
 use ethers::{
     prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
-    providers::{Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider},
     signers::{LocalWallet, Signer, Wallet},
     types::{Address, Bytes, Transaction, H256, U256},
     utils::{self, hex, rlp},
 };
 use futures_util::StreamExt;
-use tokio::time::Duration;
 use tsuki::{
     tx_pool::TxPool,
     utils::{
         batch::{common::BatchRequest, custom_ipc::Ipc, BatchProvider},
-        block::Block,
+        block::{Block, Header, PartialHeader},
         serialize_structs::{Res, TraceConfig, TracerConfig},
         transaction::{build_typed_transaction, EthTransactionRequest, TypedTransaction},
         txstructs::TxLinkedList,
@@ -181,6 +181,37 @@ async fn retrieve_account_nonces(
     return result;
 }
 
+async fn debug_traceBlock<M: JsonRpcClient>(
+    provider_ipc: Arc<Provider<M>>,
+    header: Header,
+    transactions: Vec<TypedTransaction>,
+) -> Vec<Res> {
+    let sim_block: Block = Block::new(header.into(), transactions, vec![]);
+    let sim_block_rlp = rlp::encode(&sim_block);
+    let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
+    let sim_block_rlp = utils::serialize(&sim_block_rlp);
+
+    let config = TraceConfig {
+        disable_storage: true,
+        disable_stack: true,
+        enable_memory: false,
+        enable_return_data: false,
+        tracer: "callTracer".to_string(),
+        tracer_config: Some(TracerConfig {
+            only_top_call: true,
+            with_log: false,
+        }),
+    };
+    let config = utils::serialize(&config);
+
+    // provider_ipc.get_transaction_count(from, block);
+    let result = provider_ipc
+        .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
+        .await
+        .unwrap();
+    return result;
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
@@ -275,29 +306,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
         txn_list.extend(mempool_txns);
 
-        let sim_block: Block =
-            Block::new(current_block.header.into(), txn_list, current_block.ommers);
-        let sim_block_rlp = rlp::encode(&sim_block);
-        let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
-        let sim_block_rlp = utils::serialize(&sim_block_rlp);
-
-        let config = TraceConfig {
-            disable_storage: true,
-            disable_stack: true,
-            enable_memory: false,
-            enable_return_data: false,
-            tracer: "callTracer".to_string(),
-            tracer_config: Some(TracerConfig {
-                only_top_call: true,
-                with_log: false,
-            }),
-        };
-        let config = utils::serialize(&config);
-
         // provider_ipc.get_transaction_count(from, block);
-        let result = provider_ipc
-            .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
-            .await?;
+        let result = debug_traceBlock(provider_ipc.clone(), current_block.header, txn_list).await;
         println!(
             "First Block: {}ms, Batch nonce call: {}ms, Total Time elapsed: {}ms",
             (block_rlp_now - now).as_millis(),
