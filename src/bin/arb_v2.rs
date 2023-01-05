@@ -103,12 +103,39 @@ fn heapify_mempool(mut mempool_txns: Vec<Transaction>) -> BinaryHeap<TxLinkedLis
 }
 
 // https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/miner/worker.go#L942
-fn filter_mempool(mempool_txns: Vec<Transaction>, next_base_fee: U256) -> Vec<Transaction> {
+// TODO: need to account for https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/miner/worker.go#L1020
+// where if gas limit is reached it ignores the other transactions from same sender (may impact our block predict algorithm)
+fn filter_mempool(
+    mempool_txns: Vec<Transaction>,
+    account_nonces: HashMap<Address, U256>,
+    next_base_fee: U256,
+) -> (Vec<Transaction>, Vec<Transaction>) {
+    let mut seen: HashSet<Address> = HashSet::new();
     let mut heap = heapify_mempool(mempool_txns);
+    let mut rejected_txns: Vec<Transaction> = Vec::new();
     let mut final_txns: Vec<Transaction> = Vec::new();
     while heap.len() != 0 {
         let mut ll = heap.pop().unwrap();
         let txn = ll.linked_list.pop_front().unwrap();
+        if !seen.contains(&txn.from) {
+            seen.insert(txn.from);
+
+            // check account nonce
+            let nonce = account_nonces.get(&txn.from).unwrap();
+            if txn.nonce < *nonce {
+                // nonce too low, ignore txn and reinsert linkedlist into
+                rejected_txns.push(txn);
+                if ll.linked_list.front().is_some() {
+                    heap.push(ll);
+                }
+                continue;
+            } else if txn.nonce > *nonce {
+                // nonce to high, ignore this and all following
+                // transactions from sender by going to top of while loop
+                continue;
+            }
+        }
+
         let gas_fee = match txn.max_fee_per_gas {
             Some(val) => val,
             None => txn.gas_price.unwrap(),
@@ -133,19 +160,19 @@ fn filter_mempool(mempool_txns: Vec<Transaction>, next_base_fee: U256) -> Vec<Tr
         }
         final_txns.push(txn);
     }
-    final_txns
+    (final_txns, rejected_txns)
 }
 
 async fn retrieve_account_nonces(
     batch_provider_ipc: &BatchProvider<Ipc>,
-    txns: &Vec<TypedTransaction>,
+    txns: &Vec<Transaction>,
 ) -> HashMap<Address, U256> {
     let mut batch = BatchRequest::new();
     let mut addresses: Vec<Address> = Vec::new();
     let mut seen: HashSet<Address> = HashSet::new();
     let mut result: HashMap<Address, U256> = HashMap::new();
     for txn in txns {
-        let address = txn.recover().unwrap();
+        let address = txn.from;
         if !seen.contains(&address) {
             batch
                 .add_request("eth_getTransactionCount", (address, "latest"))
@@ -181,12 +208,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let txpool = Arc::new(txpool);
     tokio::spawn(txpool.clone().stream_mempool());
 
-    // wait 10 seconds for local mempool to populate
-    println!("waiting for mempool to heat up...");
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
+    let start_block_number = provider_ipc.get_block_number().await?;
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
+        // wait for three blocks to warm up mempool
+        if block.number.unwrap() == start_block_number + 3 {
+            let block = provider_ipc
+                .get_block(block.number.unwrap())
+                .await?
+                .unwrap();
+            // update local mempool
+            let mut txn_hashes: Vec<H256> = Vec::new();
+            for hash in &block.transactions {
+                txn_hashes.push(*hash);
+            }
+            let _num_removed = txpool.remove_transactions(txn_hashes).await;
+            println!(
+                "Num txns removed from mempool while warming up: {}",
+                _num_removed
+            );
+            continue;
+        }
+
         /*
         1) predict next block
         2) simulate next block w/ our transactions
@@ -213,51 +256,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for txn in &current_block.transactions {
             txn_hashes.push(txn.hash());
         }
-        let _num_removed = txpool.remove_transactions(txn_hashes).await;
-        println!("Num txns removed from mempool: {}", _num_removed);
+        let num_removed = txpool.remove_transactions(txn_hashes).await;
+        println!("Num txns removed from mempool: {}", num_removed);
 
         let mempool_txns = txpool.get_mempool().await;
-        let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
+        let account_nonces = retrieve_account_nonces(&batch_provider_ipc, &mempool_txns).await;
+
+        let (mempool_txns, rejected_txns) =
+            filter_mempool(mempool_txns, account_nonces, next_base_fee);
+        let num_removed = txpool
+            .remove_transactions(rejected_txns.into_iter().map(|t| t.hash()).collect())
+            .await;
+        println!(
+            "Num txns removed from mempool after block sim: {}",
+            num_removed
+        );
+
         let mempool_txns: Vec<TypedTransaction> = mempool_txns
             .into_iter()
             .map(|t| TypedTransaction::from(t))
             .collect();
 
-        //let mut txns = current_block.transactions;
-
-        // all TypedTransactions
-        //txns.extend(mempool_txns);
-
-        //println!("transactions for next block:");
-        //println!("{:#?}", txns);
-        //println!("\n\n\n");
-        let account_nonces_2 = retrieve_account_nonces(&batch_provider_ipc, &mempool_txns).await;
-
-        let mut tx_to_add: Vec<TypedTransaction> = Vec::new();
-
-        // add current block's transactions to txs to add
-        for txn in current_block.transactions {
-            tx_to_add.push(txn);
-        }
-
-        // append our transactions to the end of current block's transactions
-        for tx in mempool_txns {
-            let address = tx.recover().unwrap();
-            if account_nonces_2.contains_key(&address) {
-                let nonce_lookup = account_nonces_2.get(&address).unwrap();
-
-                // nonce filter logic (???)
-                if nonce_lookup == tx.nonce() {
-                    tx_to_add.push(tx);
-                }
-            }
-        }
-        println!("transactions for next block filtered:");
-        println!("{:#?}", tx_to_add.len());
-        println!("\n\n\n");
+        let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
+        txn_list.extend(mempool_txns);
 
         let sim_block: Block =
-            Block::new(current_block.header.into(), tx_to_add, current_block.ommers);
+            Block::new(current_block.header.into(), txn_list, current_block.ommers);
         let sim_block_rlp = rlp::encode(&sim_block);
         let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
         let sim_block_rlp = utils::serialize(&sim_block_rlp);
@@ -282,6 +306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         println!("Time elapsed: {}ms", now.elapsed().as_millis());
         println!("Number in result: {:?}", result.len());
+        println!("\n\n");
     }
     Ok(())
 }
