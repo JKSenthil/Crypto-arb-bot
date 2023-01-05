@@ -227,6 +227,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         3) If arb, then execute transaction
         */
 
+        let now = Instant::now();
+
         // pull next block details
         let block_number = block.number.unwrap();
         let block_number = utils::serialize(&(block_number.as_u64()));
@@ -235,6 +237,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .request::<_, Bytes>("debug_getBlockRlp", [block_number])
             .await?;
         let current_block: Block = rlp::decode(&bytes)?;
+        let block_rlp_now = Instant::now();
 
         let next_base_fee = compute_next_base_fee(
             current_block.header.base_fee_per_gas.unwrap(),
@@ -252,6 +255,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let mempool_txns = txpool.get_mempool().await;
         let account_nonces = retrieve_account_nonces(&batch_provider_ipc, &mempool_txns).await;
+        let nonce_now = Instant::now();
 
         let (mempool_txns, rejected_txns) =
             filter_mempool(mempool_txns, account_nonces, next_base_fee);
@@ -291,11 +295,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let config = utils::serialize(&config);
 
         // provider_ipc.get_transaction_count(from, block);
-        let now = Instant::now();
         let result = provider_ipc
             .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
             .await?;
-        println!("Time elapsed: {}ms", now.elapsed().as_millis());
+        println!(
+            "First Block: {}ms, Batch nonce call: {}ms, Total Time elapsed: {}ms",
+            (block_rlp_now - now).as_millis(),
+            (nonce_now - block_rlp_now).as_millis(),
+            now.elapsed().as_millis()
+        );
         println!("Number in result: {:?}", result.len());
         println!("\n\n");
     }
