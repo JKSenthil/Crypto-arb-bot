@@ -212,7 +212,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
         // wait for three blocks to warm up mempool
-        if block.number.unwrap() == start_block_number + 3 {
+        if block.number.unwrap() <= start_block_number + 3 {
             let block = provider_ipc
                 .get_block(block.number.unwrap())
                 .await?
