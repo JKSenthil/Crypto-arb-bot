@@ -1,5 +1,6 @@
 pub mod batch;
 pub mod block;
+pub mod block_oracle;
 pub mod matrix;
 pub mod multicall;
 pub mod serialize_structs;

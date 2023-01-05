@@ -255,6 +255,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         /*
         1) predict next block
         2) simulate next block w/ our transactions
+            -> TODO filter out transactions with no data
+            -> and find other ways to make our simulated block smaller for speed
         3) If arb, then execute transaction
         */
 
@@ -306,7 +308,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
         txn_list.extend(mempool_txns);
 
-        // provider_ipc.get_transaction_count(from, block);
         let result = debug_traceBlock(provider_ipc.clone(), current_block.header, txn_list).await;
         println!(
             "First Block: {}ms, Batch nonce call: {}ms, Total Time elapsed: {}ms",
