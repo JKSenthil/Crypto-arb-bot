@@ -2,8 +2,8 @@
 
 use super::{
     EIP1559Transaction, EIP1559TransactionRequest, EIP2930TransactionRequest,
-    EthTransactionRequest, LegacyTransaction, LegacyTransactionRequest, TypedTransaction,
-    TypedTransactionRequest,
+    EthTransactionRequest, LegacyTransaction, LegacyTransactionRequest, TransactionKind,
+    TypedTransaction, TypedTransactionRequest,
 };
 use ethers::types::{
     transaction::{
@@ -96,6 +96,11 @@ impl From<TypedTransactionRequest> for EthersTypedTransactionRequest {
 // TODO fix this somehow?
 impl From<EthersTransaction> for TypedTransaction {
     fn from(transaction: EthersTransaction) -> TypedTransaction {
+        let kind: TransactionKind = match transaction.to {
+            Some(to) => TransactionKind::Call(to),
+            None => TransactionKind::Create,
+        };
+
         if let Some(_) = transaction.max_fee_per_gas {
             let parity = if transaction.v == U64::one() {
                 true
@@ -108,7 +113,7 @@ impl From<EthersTransaction> for TypedTransaction {
                 max_priority_fee_per_gas: transaction.max_priority_fee_per_gas.unwrap(),
                 max_fee_per_gas: transaction.max_fee_per_gas.unwrap(),
                 gas_limit: transaction.gas,
-                kind: super::TransactionKind::Call(transaction.to.unwrap()),
+                kind: kind,
                 value: transaction.value,
                 input: transaction.input,
                 access_list: transaction.access_list.unwrap(),
@@ -129,7 +134,7 @@ impl From<EthersTransaction> for TypedTransaction {
             nonce: transaction.nonce,
             gas_price: transaction.gas_price.unwrap(),
             gas_limit: transaction.gas,
-            kind: super::TransactionKind::Call(transaction.to.unwrap()),
+            kind: kind,
             value: transaction.value,
             input: transaction.input,
             signature: Signature {
