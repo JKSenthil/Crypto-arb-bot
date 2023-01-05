@@ -234,6 +234,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let account_nonces_2 = retrieve_account_nonces(&batch_provider_ipc, &mempool_txns).await;
 
         let mut tx_to_add: Vec<TypedTransaction> = Vec::new();
+
+        // add current block's transactions to txs to add
+        for txn in current_block.transactions {
+            tx_to_add.push(txn);
+        }
+
+        // append our transactions to the end of current block's transactions
         for tx in mempool_txns {
             let address = tx.recover().unwrap();
             if account_nonces_2.contains_key(&address) {
