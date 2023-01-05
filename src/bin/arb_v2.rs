@@ -170,18 +170,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let provider_ipc = Arc::new(provider_ipc);
     let batch_provider_ipc = BatchProvider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
 
-    let wallet = std::env::var("PRIVATE_KEY")
-        .unwrap()
-        .parse::<LocalWallet>()
-        .unwrap()
-        .with_chain_id(137u64);
-    let signer_client = SignerMiddleware::new(provider_ipc.clone(), wallet);
+    // let wallet = std::env::var("PRIVATE_KEY")
+    //     .unwrap()
+    //     .parse::<LocalWallet>()
+    //     .unwrap()
+    //     .with_chain_id(137u64);
+    // let signer_client = SignerMiddleware::new(provider_ipc.clone(), wallet);
 
     let txpool = TxPool::init(provider_ipc.clone(), 1000);
     let txpool = Arc::new(txpool);
     tokio::spawn(txpool.clone().stream_mempool());
 
     // wait 10 seconds for local mempool to populate
+    println!("waiting for mempool to heat up...");
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
@@ -215,44 +216,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _num_removed = txpool.remove_transactions(txn_hashes).await;
         println!("Num txns removed from mempool: {}", _num_removed);
 
-        let account_nonces =
-            retrieve_account_nonces(&batch_provider_ipc, &current_block.transactions).await;
+        let mempool_txns = txpool.get_mempool().await;
+        let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
+        let mempool_txns: Vec<TypedTransaction> = mempool_txns
+            .into_iter()
+            .map(|t| TypedTransaction::from(t))
+            .collect();
 
-        // let mempool_txns = txpool.get_mempool().await;
-        // let mempool_txns = filter_mempool(mempool_txns, next_base_fee);
-        // let mempool_txns: Vec<TypedTransaction> = mempool_txns
-        //     .into_iter()
-        //     .map(|t| TypedTransaction::from(t))
-        //     .collect();
+        //let mut txns = current_block.transactions;
 
-        // let mut txns = current_block.transactions;
+        // all TypedTransactions
+        //txns.extend(mempool_txns);
 
-        // txns.extend(mempool_txns);
-        // let sim_block: Block = Block::new(current_block.header.into(), txns, current_block.ommers);
-        // let sim_block_rlp = rlp::encode(&sim_block);
-        // let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
-        // let sim_block_rlp = utils::serialize(&sim_block_rlp);
+        //println!("transactions for next block:");
+        //println!("{:#?}", txns);
+        //println!("\n\n\n");
+        let account_nonces_2 = retrieve_account_nonces(&batch_provider_ipc, &mempool_txns).await;
 
-        // let config = TraceConfig {
-        //     disable_storage: true,
-        //     disable_stack: true,
-        //     enable_memory: false,
-        //     enable_return_data: false,
-        //     tracer: "callTracer".to_string(),
-        //     tracer_config: Some(TracerConfig {
-        //         only_top_call: true,
-        //         with_log: false,
-        //     }),
-        // };
-        // let config = utils::serialize(&config);
+        let mut tx_to_add: Vec<TypedTransaction> = Vec::new();
+        for tx in mempool_txns {
+            let address = tx.recover().unwrap();
+            if account_nonces_2.contains_key(&address) {
+                let nonce_lookup = account_nonces_2.get(&address).unwrap();
 
-        // // provider_ipc.get_transaction_count(from, block);
-        // let now = Instant::now();
-        // let result = provider_ipc
-        //     .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
-        //     .await?;
-        // println!("Time elapsed: {}ms", now.elapsed().as_millis());
-        // println!("Number in result: {:?}", result.len());
+                // nonce filter logic (???)
+                if nonce_lookup == tx.nonce() {
+                    tx_to_add.push(tx);
+                }
+            }
+        }
+        println!("transactions for next block filtered:");
+        println!("{:#?}", tx_to_add.len());
+        println!("\n\n\n");
+
+        let sim_block: Block =
+            Block::new(current_block.header.into(), tx_to_add, current_block.ommers);
+        let sim_block_rlp = rlp::encode(&sim_block);
+        let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
+        let sim_block_rlp = utils::serialize(&sim_block_rlp);
+
+        let config = TraceConfig {
+            disable_storage: true,
+            disable_stack: true,
+            enable_memory: false,
+            enable_return_data: false,
+            tracer: "callTracer".to_string(),
+            tracer_config: Some(TracerConfig {
+                only_top_call: true,
+                with_log: false,
+            }),
+        };
+        let config = utils::serialize(&config);
+
+        // provider_ipc.get_transaction_count(from, block);
+        let now = Instant::now();
+        let result = provider_ipc
+            .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
+            .await?;
+        println!("Time elapsed: {}ms", now.elapsed().as_millis());
+        println!("Number in result: {:?}", result.len());
     }
     Ok(())
 }
