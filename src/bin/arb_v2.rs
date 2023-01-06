@@ -20,6 +20,7 @@ use tsuki::{
     utils::{
         batch::{common::BatchRequest, custom_ipc::Ipc, BatchProvider},
         block::{Block, Header, PartialHeader},
+        block_oracle::BlockOracle,
         serialize_structs::{Res, TraceConfig, TracerConfig},
         transaction::{build_typed_transaction, EthTransactionRequest, TypedTransaction},
         txstructs::TxLinkedList,
@@ -262,14 +263,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let now = Instant::now();
 
+        let oracle_cache_size = 128 as usize;
+        let mut block_oracle = BlockOracle::new(oracle_cache_size);
+
         // pull next block details
         let block_number = block.number.unwrap();
         let block_number = utils::serialize(&(block_number.as_u64()));
 
+        // get the current block
         let bytes = provider_ipc
             .request::<_, Bytes>("debug_getBlockRlp", [block_number])
             .await?;
         let current_block: Block = rlp::decode(&bytes)?;
+
+        // add current block copy to oracle
+        block_oracle.append_block(current_block.clone());
+
         let block_rlp_now = Instant::now();
 
         let next_base_fee = compute_next_base_fee(
@@ -300,14 +309,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             num_removed
         );
 
+        // convert all mempool tx into TypedTransaction
         let mempool_txns: Vec<TypedTransaction> = mempool_txns
             .into_iter()
             .map(|t| TypedTransaction::from(t))
             .collect();
 
+        // add state of mempool to current block
         let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
         txn_list.extend(mempool_txns);
 
+        // use our prediction algo and compare with previously known block
+        block_oracle.predict_next_block(txn_list.clone());
+
+        // simulate that block
         let result = debug_traceBlock(provider_ipc.clone(), current_block.header, txn_list).await;
         println!(
             "First Block: {}ms, Batch nonce call: {}ms, Total Time elapsed: {}ms",

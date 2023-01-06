@@ -5,7 +5,7 @@ use lru::LruCache;
 
 use super::{block::Block, transaction::TypedTransaction};
 
-struct BlockOracle {
+pub struct BlockOracle {
     prev_blocks: LruCache<H256, Block>,
 }
 
@@ -22,7 +22,7 @@ impl BlockOracle {
 
     pub fn predict_next_block(&self, mempool_txns: Vec<TypedTransaction>) -> Vec<TypedTransaction> {
         // TODO: come up with strategy to predict next block
-        Vec::new()
+        return mempool_txns;
     }
 
     pub fn compare_accuracy(
