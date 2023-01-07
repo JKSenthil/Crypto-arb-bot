@@ -245,10 +245,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for hash in &block.transactions {
                 txn_hashes.push(*hash);
             }
-            let _num_removed = txpool.remove_transactions(txn_hashes).await;
+            let num_removed = txpool.remove_transactions(txn_hashes).await;
             println!(
                 "Num txns removed from mempool while warming up: {}",
-                _num_removed
+                num_removed
             );
             continue;
         }
@@ -263,7 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let now = Instant::now();
 
-        let oracle_cache_size = 128 as usize;
+        let oracle_cache_size = 5 as usize;
         let mut block_oracle = BlockOracle::new(oracle_cache_size);
 
         // pull next block details
@@ -276,8 +276,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         let current_block: Block = rlp::decode(&bytes)?;
 
-        // add current block copy to oracle
+        // add current block copy to oracle and verify previous prediction
         block_oracle.append_block(current_block.clone());
+        block_oracle.display_accuracy();
 
         let block_rlp_now = Instant::now();
 
