@@ -294,6 +294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .request::<_, Bytes>("debug_getBlockRlp", [block_number])
             .await?;
         let current_block: Block = rlp::decode(&bytes)?;
+        println!("Act gas limit: {}", current_block.header.gas_limit);
 
         // print hit rate with predicted block
         let mut hits = 0;
@@ -353,6 +354,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // simulate that block
         let next_gas_limit = compute_next_gas_limit(block.gas_limit);
+        println!("Pred gas limit: {}", next_gas_limit);
         let result = debug_traceBlock(
             provider_ipc.clone(),
             current_block.header,
