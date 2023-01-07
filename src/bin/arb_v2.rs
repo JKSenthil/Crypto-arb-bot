@@ -35,6 +35,7 @@ lazy_static! {
     static ref DESIRED_GAS_LIMIT: U256 = U256::from(30_000_000);
 }
 
+// TODO: this doesnt seem to predict accurately?
 // https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/core/block_validator.go#L108
 fn compute_next_gas_limit(current_gas_limit: U256) -> U256 {
     let delta = current_gas_limit
@@ -364,6 +365,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .await;
         if result.is_err() {
+            // TODO: remove transactions from mempool causing error
+            // could do by parsing out address and filtering out
+            // transactions with that for address
             println!("{:?}", result.unwrap_err());
             continue;
         }
