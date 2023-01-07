@@ -11,7 +11,7 @@ use ethers::{
     prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
     providers::{JsonRpcClient, Middleware, Provider},
     signers::{LocalWallet, Signer, Wallet},
-    types::{Address, Bytes, Transaction, H256, U256},
+    types::{Address, Bytes, Transaction, H256, H64, U256},
     utils::{self, hex, rlp},
 };
 use futures_util::StreamExt;
@@ -185,9 +185,29 @@ async fn retrieve_account_nonces(
 async fn debug_traceBlock<M: JsonRpcClient>(
     provider_ipc: Arc<Provider<M>>,
     header: Header,
+    base_fee: U256,
+    gas_limit: U256,
     transactions: Vec<TypedTransaction>,
 ) -> Vec<Res> {
-    let sim_block: Block = Block::new(header.into(), transactions, vec![]);
+    let latest_block_hash = header.hash();
+    let partial_header: PartialHeader = header.into();
+    let new_partial_header = PartialHeader {
+        parent_hash: latest_block_hash,
+        beneficiary: partial_header.beneficiary,
+        state_root: H256::zero(),
+        receipts_root: H256::zero(),
+        logs_bloom: partial_header.logs_bloom,
+        difficulty: partial_header.difficulty,
+        number: partial_header.number + 1,
+        gas_limit: gas_limit,
+        gas_used: gas_limit,
+        timestamp: partial_header.timestamp,
+        extra_data: partial_header.extra_data,
+        mix_hash: H256::zero(),
+        nonce: H64::zero(),
+        base_fee: Some(base_fee),
+    };
+    let sim_block: Block = Block::new(new_partial_header, transactions, vec![]);
     let sim_block_rlp = rlp::encode(&sim_block);
     let sim_block_rlp = ["0x", &hex::encode(sim_block_rlp)].join("");
     let sim_block_rlp = utils::serialize(&sim_block_rlp);
@@ -205,7 +225,6 @@ async fn debug_traceBlock<M: JsonRpcClient>(
     };
     let config = utils::serialize(&config);
 
-    // provider_ipc.get_transaction_count(from, block);
     let result = provider_ipc
         .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
         .await
@@ -263,8 +282,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let now = Instant::now();
 
-        let oracle_cache_size = 5 as usize;
-        let mut block_oracle = BlockOracle::new(oracle_cache_size);
+        // let oracle_cache_size = 5 as usize;
+        // let mut block_oracle = BlockOracle::new(oracle_cache_size);
 
         // pull next block details
         let block_number = block.number.unwrap();
@@ -277,8 +296,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let current_block: Block = rlp::decode(&bytes)?;
 
         // add current block copy to oracle and verify previous prediction
-        block_oracle.append_block(current_block.clone());
-        block_oracle.display_accuracy();
+        // block_oracle.append_block(current_block.clone());
+        // block_oracle.display_accuracy();
 
         let block_rlp_now = Instant::now();
 
@@ -317,14 +336,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect();
 
         // add state of mempool to current block
-        let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
-        txn_list.extend(mempool_txns.clone());
+        // let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
+        // txn_list.extend(mempool_txns.clone());
 
         // use our prediction algo and compare with previously known block
-        block_oracle.predict_next_block(mempool_txns);
+        // block_oracle.predict_next_block(mempool_txns);
 
         // simulate that block
-        let result = debug_traceBlock(provider_ipc.clone(), current_block.header, txn_list).await;
+        let next_gas_limit = compute_next_gas_limit(block.gas_limit);
+        let result = debug_traceBlock(
+            provider_ipc.clone(),
+            current_block.header,
+            next_base_fee,
+            next_gas_limit,
+            mempool_txns,
+        )
+        .await;
         println!(
             "First Block: {}ms, Batch nonce call: {}ms, Total Time elapsed: {}ms",
             (block_rlp_now - now).as_millis(),
