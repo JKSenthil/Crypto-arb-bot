@@ -9,7 +9,7 @@ use std::{
 use dotenv::dotenv;
 use ethers::{
     prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
-    providers::{JsonRpcClient, Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
     types::{Address, Bytes, Transaction, H256, H64, U256},
     utils::{self, hex, rlp},
@@ -188,9 +188,10 @@ async fn debug_traceBlock<M: JsonRpcClient>(
     base_fee: U256,
     gas_limit: U256,
     transactions: Vec<TypedTransaction>,
-) -> Vec<Res> {
+) -> Result<Vec<Res>, ProviderError> {
     let latest_block_hash = header.hash();
     let partial_header: PartialHeader = header.into();
+    // fyi: https://ethereum.stackexchange.com/questions/6400/what-is-the-exact-data-structure-of-each-block
     let new_partial_header = PartialHeader {
         parent_hash: latest_block_hash,
         beneficiary: partial_header.beneficiary,
@@ -225,11 +226,9 @@ async fn debug_traceBlock<M: JsonRpcClient>(
     };
     let config = utils::serialize(&config);
 
-    let result = provider_ipc
+    return provider_ipc
         .request::<_, Vec<Res>>("debug_traceBlock", [sim_block_rlp, config])
-        .await
-        .unwrap();
-    return result;
+        .await;
 }
 
 #[tokio::main]
@@ -250,6 +249,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let txpool = Arc::new(txpool);
     tokio::spawn(txpool.clone().stream_mempool());
 
+    let mut predicted_txn_hashes: HashSet<H256> = HashSet::new();
     let start_block_number = provider_ipc.get_block_number().await?;
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
@@ -295,17 +295,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
         let current_block: Block = rlp::decode(&bytes)?;
 
+        // print hit rate with predicted block
+        let mut hits = 0;
+        for txn in &current_block.transactions {
+            if predicted_txn_hashes.contains(&txn.hash()) {
+                hits += 1;
+            }
+        }
+        println!(
+            "{}/{} were hit in prediction. Actual block size: {}",
+            hits,
+            predicted_txn_hashes.len(),
+            current_block.transactions.len()
+        );
+
         // add current block copy to oracle and verify previous prediction
         // block_oracle.append_block(current_block.clone());
         // block_oracle.display_accuracy();
 
         let block_rlp_now = Instant::now();
-
-        let next_base_fee = compute_next_base_fee(
-            current_block.header.base_fee_per_gas.unwrap(),
-            current_block.header.gas_used,
-            current_block.header.gas_limit,
-        );
 
         // update local mempool
         let mut txn_hashes: Vec<H256> = Vec::new();
@@ -319,6 +327,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let account_nonces = retrieve_account_nonces(&batch_provider_ipc, &mempool_txns).await;
         let nonce_now = Instant::now();
 
+        let next_base_fee = compute_next_base_fee(
+            current_block.header.base_fee_per_gas.unwrap(),
+            current_block.header.gas_used,
+            current_block.header.gas_limit,
+        );
         let (mempool_txns, rejected_txns) =
             filter_mempool(mempool_txns, account_nonces, next_base_fee);
         let num_removed = txpool
@@ -335,10 +348,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|t| TypedTransaction::from(t))
             .collect();
 
-        // add state of mempool to current block
-        // let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
-        // txn_list.extend(mempool_txns.clone());
-
         // use our prediction algo and compare with previously known block
         // block_oracle.predict_next_block(mempool_txns);
 
@@ -349,16 +358,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             current_block.header,
             next_base_fee,
             next_gas_limit,
-            mempool_txns,
+            mempool_txns.clone(),
         )
         .await;
+        if result.is_err() {
+            println!("{:?}", result.unwrap_err());
+            continue;
+        }
+        let result = result.unwrap();
+
+        // count upto the transaction that fills gas
+        predicted_txn_hashes.clear();
+        let mut i = 0;
+        let mut gas_consumed = U256::zero();
+        for res in result {
+            gas_consumed += res.result.gas_used;
+            if gas_consumed > next_gas_limit {
+                break;
+            }
+            predicted_txn_hashes.insert(mempool_txns[i].hash());
+            i += 1;
+        }
+
         println!(
             "First Block: {}ms, Batch nonce call: {}ms, Total Time elapsed: {}ms",
             (block_rlp_now - now).as_millis(),
             (nonce_now - block_rlp_now).as_millis(),
             now.elapsed().as_millis()
         );
-        println!("Number in result: {:?}", result.len());
+        // println!("Number in result: {:?}", result.len());
         println!("\n\n");
     }
     Ok(())
