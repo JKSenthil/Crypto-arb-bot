@@ -318,10 +318,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // add state of mempool to current block
         let mut txn_list: Vec<TypedTransaction> = current_block.transactions;
-        txn_list.extend(mempool_txns);
+        txn_list.extend(mempool_txns.clone());
 
         // use our prediction algo and compare with previously known block
-        block_oracle.predict_next_block(txn_list.clone());
+        block_oracle.predict_next_block(mempool_txns);
 
         // simulate that block
         let result = debug_traceBlock(provider_ipc.clone(), current_block.header, txn_list).await;

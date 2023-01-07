@@ -37,7 +37,7 @@ impl BlockOracle {
         for (_, block) in &self.prev_blocks {
             sum += block.transactions.len();
         }
-        let avg = sum / self.prev_blocks.len();
+        let avg = sum / 5;
         self.prediction = mempool_txns[..avg].to_vec();
         return self.prediction.clone();
     }
