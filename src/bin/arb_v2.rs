@@ -1,6 +1,7 @@
 use lazy_static::lazy_static;
 use std::{
     collections::{BinaryHeap, HashMap, HashSet},
+    str::FromStr,
     sync::Arc,
     time::Instant,
     vec,
@@ -11,14 +12,18 @@ use ethers::{
     prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
     providers::{JsonRpcClient, Middleware, Provider, ProviderError},
     signers::{LocalWallet, Signer, Wallet},
-    types::{Address, Bytes, Transaction, H256, H64, U256},
+    types::{Address, Bytes, Transaction, H160, H256, H64, U256},
     utils::{self, hex, rlp},
 };
 use futures_util::StreamExt;
 use tsuki::{
     tx_pool::TxPool,
     utils::{
-        batch::{common::BatchRequest, custom_ipc::Ipc, BatchProvider},
+        batch::{
+            common::{BatchRequest, JsonRpcError},
+            custom_ipc::Ipc,
+            BatchProvider,
+        },
         block::{Block, Header, PartialHeader},
         block_oracle::BlockOracle,
         serialize_structs::{Res, TraceConfig, TracerConfig},
@@ -345,7 +350,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // convert all mempool tx into TypedTransaction
-        let mempool_txns: Vec<TypedTransaction> = mempool_txns
+        let mempool_txns_typed: Vec<TypedTransaction> = mempool_txns
             .into_iter()
             .map(|t| TypedTransaction::from(t))
             .collect();
@@ -361,14 +366,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             current_block.header,
             next_base_fee,
             next_gas_limit,
-            mempool_txns.clone(),
+            mempool_txns_typed.clone(),
         )
         .await;
         if result.is_err() {
             // TODO: remove transactions from mempool causing error
             // could do by parsing out address and filtering out
             // transactions with that for address
-            println!("{:?}", result.unwrap_err());
+            match result.unwrap_err() {
+                ProviderError::JsonRpcClientError(value) => {
+                    if let Some((_, b)) = value
+                        .to_string()
+                        .split_once("insufficient funds for gas * price + value: address 0x")
+                    {
+                        // message is: { code: -32000, message:
+                        // "insufficient funds for gas * price + value: address 0x...
+                        // have 0 want 17567598500000000000", data: None }
+                        // after
+                        if let Some((address_str, _)) = b.split_once(" have") {
+                            match H160::from_str(address_str) {
+                                Ok(address) => {
+                                    println!("insufficient gas error for address: {:?}", address);
+
+                                    // remove that all txs associated with address from the mempool
+                                    let curr_mempool_txs = txpool.get_mempool().await;
+
+                                    // get transaction hashes sent by the offending address
+                                    let troll_tx_hashes: Vec<H256> = curr_mempool_txs
+                                        .into_iter()
+                                        .filter(|tx| tx.from == address)
+                                        .map(|tx| tx.hash)
+                                        .collect();
+
+                                    // remove such txs from the mempool
+                                    txpool.remove_transactions(troll_tx_hashes).await;
+
+                                    println!(
+                                        "Remove transactions from {:?} from the mempool.",
+                                        address
+                                    );
+                                }
+                                Err(e) => {
+                                    println!("{:?}", e);
+                                }
+                            }
+                        }
+                    } else {
+                        // print other JsonRpcClientError
+                        println!("{:?}", value);
+                    }
+                }
+                other => {
+                    println!("{:?}", other);
+                }
+            }
             continue;
         }
         let result = result.unwrap();
@@ -382,7 +433,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if gas_consumed > next_gas_limit {
                 break;
             }
-            predicted_txn_hashes.insert(mempool_txns[i].hash());
+            predicted_txn_hashes.insert(mempool_txns_typed[i].hash());
             i += 1;
         }
 
