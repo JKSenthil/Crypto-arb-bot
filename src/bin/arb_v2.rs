@@ -1,12 +1,3 @@
-use lazy_static::lazy_static;
-use std::{
-    collections::{BinaryHeap, HashMap, HashSet},
-    str::FromStr,
-    sync::Arc,
-    time::Instant,
-    vec,
-};
-
 use dotenv::dotenv;
 use ethers::{
     prelude::{k256::ecdsa::SigningKey, SignerMiddleware},
@@ -16,6 +7,15 @@ use ethers::{
     utils::{self, hex, rlp},
 };
 use futures_util::StreamExt;
+use lazy_static::lazy_static;
+use regex::Regex;
+use std::{
+    collections::{BinaryHeap, HashMap, HashSet},
+    str::FromStr,
+    sync::Arc,
+    time::Instant,
+    vec,
+};
 use tsuki::{
     tx_pool::TxPool,
     utils::{
@@ -375,15 +375,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // transactions with that for address
             match result.unwrap_err() {
                 ProviderError::JsonRpcClientError(value) => {
-                    if let Some((_, b)) = value
-                        .to_string()
-                        .split_once("insufficient funds for gas * price + value: address 0x")
-                    {
-                        // message is: { code: -32000, message:
-                        // "insufficient funds for gas * price + value: address 0x...
-                        // have 0 want 17567598500000000000", data: None }
-                        // after
-                        if let Some((address_str, _)) = b.split_once(" have") {
+                    // strip the 0x and capture the address in capturing group 1
+                    lazy_static! {
+                        static ref RE: Regex = Regex::new(r"insufficient funds for gas \* price \+ value: address 0x([0-9a-fA-F]+)").unwrap();
+                    }
+                    let msg_str = value.to_string();
+
+                    // get address in capture group 1
+                    match RE.captures(&msg_str) {
+                        Some(caps) => {
+                            let address_str = caps.get(1).map_or("", |m| m.as_str());
+                            println!(
+                                "insufficient funds regex got address string: {:?}",
+                                address_str
+                            );
+                            // try to convert it to address object
                             match H160::from_str(address_str) {
                                 Ok(address) => {
                                     println!("insufficient gas error for address: {:?}", address);
@@ -411,12 +417,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
-                    } else {
-                        // print other JsonRpcClientError
-                        println!("{:?}", value);
+                        None => {
+                            println!(
+                                "Unable to match insufficient funds regex. Got message: {:?}",
+                                msg_str
+                            );
+                        }
                     }
                 }
                 other => {
+                    // some provider error not having to do with JSONRpc was thrown
                     println!("{:?}", other);
                 }
             }
