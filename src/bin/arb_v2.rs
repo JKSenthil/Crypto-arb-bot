@@ -307,18 +307,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Act gas limit: {}", current_block.header.gas_limit);
 
         // print hit rate with predicted block
-        let mut hits = 0;
-        for txn in &current_block.transactions {
-            if predicted_txn_hashes.contains(&txn.hash()) {
-                hits += 1;
+        if block.number.unwrap() + 6 >= start_block_number {
+            let mut result = String::from("");
+            let mut hits = 0;
+            for txn in &current_block.transactions {
+                if predicted_txn_hashes.contains(&txn.hash()) {
+                    hits += 1;
+                    result += "*";
+                }
+                result += format!(
+                    "{:#?},{:#?},{:#?},{:#?}\n",
+                    txn.hash(),
+                    txn.gas_price(),
+                    txn.recover(),
+                    txn.nonce()
+                )
+                .as_str();
             }
+            println!("{}", result);
+            println!(
+                "{}/{} were hit in prediction. Actual block size: {}",
+                hits,
+                predicted_txn_hashes.len(),
+                current_block.transactions.len()
+            );
         }
-        println!(
-            "{}/{} were hit in prediction. Actual block size: {}",
-            hits,
-            predicted_txn_hashes.len(),
-            current_block.transactions.len()
-        );
 
         // add current block copy to oracle and verify previous prediction
         // block_oracle.append_block(current_block.clone());
