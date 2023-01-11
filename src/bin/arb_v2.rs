@@ -309,7 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // print hit rate with predicted block
         if block.number.unwrap() + 6 >= start_block_number {
-            let mut result = String::from("ACTUAL TRANSACTIONS");
+            let mut result = String::from("ACTUAL TRANSACTIONS\n");
             let mut hits = 0;
             for txn in &current_block.transactions {
                 if predicted_txn_hashes.contains(&txn.hash()) {
@@ -480,6 +480,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .as_str();
             }
+            println!("{}", result);
         }
 
         println!(
