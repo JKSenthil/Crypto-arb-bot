@@ -348,8 +348,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let num_removed = txpool.remove_transactions(txn_hashes).await;
         println!("Num txns removed from mempool: {}", num_removed);
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs_f32(0.5)).await;
         let mempool_txns = txpool.get_mempool().await;
+        println!("NUMBER OF TXNS in MEMPOOL: {}", mempool_txns.len());
         let account_nonces = retrieve_account_nonces(&batch_provider_ipc, &mempool_txns).await;
         let nonce_now = Instant::now();
 
