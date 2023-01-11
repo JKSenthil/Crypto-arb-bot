@@ -259,6 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let txpool = Arc::new(txpool);
     tokio::spawn(txpool.clone().stream_mempool());
 
+    let mut predicted_txns: Vec<TypedTransaction> = Vec::new();
     let mut predicted_txn_hashes: HashSet<H256> = HashSet::new();
     let start_block_number = provider_ipc.get_block_number().await?;
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
@@ -308,7 +309,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // print hit rate with predicted block
         if block.number.unwrap() + 6 >= start_block_number {
-            let mut result = String::from("");
+            let mut result = String::from("ACTUAL TRANSACTIONS");
             let mut hits = 0;
             for txn in &current_block.transactions {
                 if predicted_txn_hashes.contains(&txn.hash()) {
@@ -319,7 +320,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "{:#?},{:#?},{:#?},{:#?}\n",
                     txn.hash(),
                     txn.gas_price(),
-                    txn.recover(),
+                    txn.recover().unwrap(),
                     txn.nonce()
                 )
                 .as_str();
@@ -452,6 +453,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let result = result.unwrap();
 
         // count upto the transaction that fills gas
+        predicted_txns.clear();
         predicted_txn_hashes.clear();
         let mut i = 0;
         let mut gas_consumed = U256::zero();
@@ -461,7 +463,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
             predicted_txn_hashes.insert(mempool_txns_typed[i].hash());
+            predicted_txns.push(mempool_txns_typed[i].clone());
             i += 1;
+        }
+
+        // print hit rate with predicted block
+        if block.number.unwrap() + 6 >= start_block_number {
+            let mut result = String::from("PREDICTED TRANSACTIONS\n");
+            for txn in &predicted_txns {
+                result += format!(
+                    "{:#?},{:#?},{:#?},{:#?}\n",
+                    txn.hash(),
+                    txn.gas_price(),
+                    txn.recover().unwrap(),
+                    txn.nonce()
+                )
+                .as_str();
+            }
         }
 
         println!(
