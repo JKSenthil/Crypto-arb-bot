@@ -90,6 +90,7 @@ fn compute_next_base_fee(current_base_fee: U256, gas_used: U256, gas_limit: U256
 }
 
 fn heapify_mempool(mut mempool_txns: Vec<Transaction>) -> BinaryHeap<TxLinkedList> {
+    mempool_txns.sort_by(|a, b| b.gas_price.unwrap().cmp(&a.gas_price.unwrap()));
     mempool_txns.sort_by(|a, b| a.nonce.cmp(&b.nonce));
     let mut mapping: HashMap<Address, TxLinkedList> = HashMap::new();
     for txn in mempool_txns {
