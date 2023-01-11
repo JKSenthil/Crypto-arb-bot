@@ -10,7 +10,8 @@ use tokio::sync::RwLock;
 
 pub struct TxPool<M> {
     provider: Arc<M>,
-    lru_cache: RwLock<LruCache<H256, Transaction>>, // tx hash -> gas price
+    lru_cache: RwLock<LruCache<H256, Transaction>>, // tx hash -> gas price // TODO should not use lru cache
+    num_txns_received: RwLock<usize>,
 }
 
 impl<M: Middleware + Clone> TxPool<M> {
@@ -18,6 +19,7 @@ impl<M: Middleware + Clone> TxPool<M> {
         TxPool {
             provider: provider.clone(),
             lru_cache: RwLock::new(LruCache::new(NonZeroUsize::new(capacity).unwrap())),
+            num_txns_received: RwLock::new(0),
         }
     }
 
@@ -66,6 +68,15 @@ impl<M: Middleware + Clone> TxPool<M> {
         return num_removed;
     }
 
+    pub async fn reset_count(&self) {
+        let mut val = self.num_txns_received.write().await;
+        *val = 0;
+    }
+
+    pub async fn get_count(&self) -> usize {
+        return *self.num_txns_received.read().await;
+    }
+
     pub async fn stream_mempool(self: Arc<TxPool<M>>)
     where
         <M as Middleware>::Provider: PubsubClient,
@@ -82,6 +93,8 @@ impl<M: Middleware + Clone> TxPool<M> {
                 .write()
                 .await
                 .push(pending_txn.hash, pending_txn);
+            let mut val = self.num_txns_received.write().await;
+            *val += 1;
         }
     }
 }
