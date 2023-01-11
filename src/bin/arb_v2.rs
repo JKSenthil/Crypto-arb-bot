@@ -43,17 +43,18 @@ lazy_static! {
 // TODO: this doesnt seem to predict accurately?
 // https://github.com/maticnetwork/bor/blob/ad69ccd0ba6aac4a690e6b4778987242609f4845/core/block_validator.go#L108
 fn compute_next_gas_limit(current_gas_limit: U256) -> U256 {
+    let current_gas_limit = current_gas_limit * ELASTICITY_MULTIPLIER;
     let delta = current_gas_limit
         .checked_div(*GAS_LIMIT_BOUND_DIVISOR)
         .unwrap()
         - 1;
     let mut limit = current_gas_limit;
-    if current_gas_limit < *DESIRED_GAS_LIMIT {
+    if limit < *DESIRED_GAS_LIMIT {
         limit = current_gas_limit + delta;
         if limit > *DESIRED_GAS_LIMIT {
             limit = *DESIRED_GAS_LIMIT;
         }
-    } else if current_gas_limit > *DESIRED_GAS_LIMIT {
+    } else if limit > *DESIRED_GAS_LIMIT {
         limit = current_gas_limit - delta;
         if limit < *DESIRED_GAS_LIMIT {
             limit = *DESIRED_GAS_LIMIT;
