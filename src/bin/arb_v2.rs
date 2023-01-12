@@ -261,6 +261,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut predicted_txns: Vec<TypedTransaction> = Vec::new();
     let mut predicted_txn_hashes: HashSet<H256> = HashSet::new();
+    let mut mempool_txns_at_that_time: HashSet<H256> = HashSet::new();
     let start_block_number = provider_ipc.get_block_number().await?;
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
     while let Some(block) = block_stream.next().await {
@@ -291,8 +292,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         3) If arb, then execute transaction
         */
 
-        let now = Instant::now();
-
         // let oracle_cache_size = 5 as usize;
         // let mut block_oracle = BlockOracle::new(oracle_cache_size);
 
@@ -311,10 +310,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if block.number.unwrap() + 6 >= start_block_number {
             let mut result = String::from("ACTUAL TRANSACTIONS\n");
             let mut hits = 0;
+            let mut mem_hits = 0;
             for txn in &current_block.transactions {
                 if predicted_txn_hashes.contains(&txn.hash()) {
                     hits += 1;
                     result += "*";
+                }
+                if mempool_txns_at_that_time.contains(&txn.hash()) {
+                    mem_hits += 1;
                 }
                 result += format!(
                     "{:#?},{:#?},{:#?},{:#?}\n",
@@ -332,13 +335,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 predicted_txn_hashes.len(),
                 current_block.transactions.len()
             );
+            println!(
+                ">>> {}/{} txns from block were in our mempool.",
+                mem_hits,
+                current_block.transactions.len()
+            );
         }
 
         // add current block copy to oracle and verify previous prediction
         // block_oracle.append_block(current_block.clone());
         // block_oracle.display_accuracy();
-
-        let block_rlp_now = Instant::now();
 
         // update local mempool
         let mut txn_hashes: Vec<H256> = Vec::new();
@@ -349,7 +355,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Num txns removed from mempool: {}", num_removed);
 
         tokio::time::sleep(Duration::from_secs_f32(0.5)).await;
+
+        let now = Instant::now();
         let mempool_txns = txpool.get_mempool().await;
+        mempool_txns_at_that_time.clear();
+        for txn in &mempool_txns {
+            mempool_txns_at_that_time.insert(txn.hash());
+        }
         println!("NUMBER OF TXNS in MEMPOOL: {}", mempool_txns.len());
         println!("RECIEVED {} TXNS in mempool", txpool.get_count().await);
         txpool.reset_count().await;
@@ -488,9 +500,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // }
 
         println!(
-            "First Block: {}ms, Batch nonce call: {}ms, Total Time elapsed: {}ms",
-            (block_rlp_now - now).as_millis(),
-            (nonce_now - block_rlp_now).as_millis(),
+            "Batch nonce call: {}ms, Total Time elapsed: {}ms",
+            (nonce_now - now).as_millis(),
             now.elapsed().as_millis()
         );
         // println!("Number in result: {:?}", result.len());

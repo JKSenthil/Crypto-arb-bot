@@ -10,6 +10,7 @@ lru = "0.8.1"
 log = "0.4.17"
 dotenv = "0.15.0"
 enum-map = "2.4.1"
+ttl_cache = "0.5.1" # to hold mempool transactions_unordered
 env_logger = "0.9.3"
 lazy_static = "1.4.0"
 async-trait = "0.1.60"

@@ -86,7 +86,7 @@ impl<M: Middleware + Clone> TxPool<M> {
             .subscribe_pending_txs()
             .await
             .unwrap()
-            .transactions_unordered(16); // TODO: what n is ideal?
+            .transactions_unordered(8); // TODO: what n is ideal?
 
         while let Some(Ok(pending_txn)) = pending_tx_stream.next().await {
             self.lru_cache
