@@ -19,7 +19,7 @@ pub struct Call {
 
 // https://github.com/mds1/multicall
 // need to write custom multicall because
-// dumb library can't handle errors
+// library can't handle errors
 pub struct Multicall<M> {
     calls: Vec<Call>,
     contract: MulticallContract<M>,
