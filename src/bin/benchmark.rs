@@ -126,9 +126,9 @@ fn gen_txn(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
-    let batch_provider_ipc = BatchProvider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let batch_provider_ipc = BatchProvider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let txpool = TxPool::init(provider_ipc.clone(), 1000);
     let txpool = Arc::new(txpool);
     tokio::spawn(txpool.clone().stream_mempool());
@@ -151,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn old_main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
     let wallet = std::env::var("PRIVATE_KEY")
@@ -242,7 +242,7 @@ async fn old_main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn txpool() -> Result<(), Box<dyn std::error::Error>> {
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
     let txpool = TxPool::init(provider_ipc.clone(), 1000);
     let txpool = Arc::new(txpool);
@@ -252,7 +252,7 @@ async fn txpool() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn txpool_content() -> Result<(), Box<dyn std::error::Error>> {
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
     let mut block_stream = provider_ipc.subscribe_blocks().await.unwrap();
@@ -311,7 +311,7 @@ async fn txpool_content() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn debug_traceBlock() -> Result<(), Box<dyn std::error::Error>> {
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
     let block_number = provider_ipc.get_block_number().await?.as_u64();
@@ -352,7 +352,7 @@ async fn debug_traceBlock() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn debug_traceBlockByNumber() -> Result<(), Box<dyn std::error::Error>> {
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
     let block_number = provider_ipc.get_block_number().await?;

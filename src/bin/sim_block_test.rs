@@ -27,7 +27,7 @@ async fn debug_trace_call<M: JsonRpcClient>(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
 
     let client = UniswapV2Client::new(provider_ipc.clone());

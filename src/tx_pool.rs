@@ -10,8 +10,7 @@ use tokio::sync::RwLock;
 
 pub struct TxPool<M> {
     provider: Arc<M>,
-    lru_cache: RwLock<LruCache<H256, Transaction>>, // tx hash -> gas price // TODO should not use lru cache
-    num_txns_received: RwLock<usize>,
+    lru_cache: RwLock<LruCache<H256, Transaction>>, // tx hash -> gas price
 }
 
 impl<M: Middleware + Clone> TxPool<M> {
@@ -19,7 +18,6 @@ impl<M: Middleware + Clone> TxPool<M> {
         TxPool {
             provider: provider.clone(),
             lru_cache: RwLock::new(LruCache::new(NonZeroUsize::new(capacity).unwrap())),
-            num_txns_received: RwLock::new(0),
         }
     }
 
@@ -68,15 +66,6 @@ impl<M: Middleware + Clone> TxPool<M> {
         return num_removed;
     }
 
-    pub async fn reset_count(&self) {
-        let mut val = self.num_txns_received.write().await;
-        *val = 0;
-    }
-
-    pub async fn get_count(&self) -> usize {
-        return *self.num_txns_received.read().await;
-    }
-
     pub async fn stream_mempool(self: Arc<TxPool<M>>)
     where
         <M as Middleware>::Provider: PubsubClient,
@@ -86,15 +75,13 @@ impl<M: Middleware + Clone> TxPool<M> {
             .subscribe_pending_txs()
             .await
             .unwrap()
-            .transactions_unordered(8); // TODO: what n is ideal?
+            .transactions_unordered(16); // TODO: what n is ideal?
 
         while let Some(Ok(pending_txn)) = pending_tx_stream.next().await {
             self.lru_cache
                 .write()
                 .await
                 .push(pending_txn.hash, pending_txn);
-            let mut val = self.num_txns_received.write().await;
-            *val += 1;
         }
     }
 }
@@ -127,7 +114,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mempool_stream_ipc() {
-        let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc")
+        let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc")
             .await
             .unwrap();
         let provider_ipc = Arc::new(provider_ipc);

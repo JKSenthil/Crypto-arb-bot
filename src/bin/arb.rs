@@ -2,13 +2,13 @@ use clap::Parser;
 use dotenv::dotenv;
 use ethers::{
     prelude::{abigen, SignerMiddleware},
-    providers::{Http, Middleware, Provider, PubsubClient, Ws},
+    providers::{Middleware, Provider, PubsubClient, Ws},
     signers::{LocalWallet, Signer},
     types::{Address, U256},
 };
 use futures_util::StreamExt;
 use log::{debug, error, info};
-use std::{process, sync::Arc, time::Instant};
+use std::{sync::Arc, time::Instant};
 
 use tsuki::{
     constants::{
@@ -88,9 +88,6 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
     stream_provider: Provider<P>,
     routes: Vec<Route>,
 ) {
-    let global_provider = Provider::<Http>::try_from("https://polygon-rpc.com").unwrap();
-    let global_provider = Arc::new(global_provider);
-
     let tokens_list = vec![USDC, USDT, DAI, WBTC, WMATIC, WETH];
 
     let txpool = TxPool::init(provider.clone(), 1000);
@@ -113,7 +110,7 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
         .parse::<LocalWallet>()
         .unwrap()
         .with_chain_id(137u64);
-    let client = SignerMiddleware::new(global_provider.clone(), wallet);
+    let client = SignerMiddleware::new(provider.clone(), wallet);
     let arbitrage_contract = Flashloan::new(
         "0x7472bacc648111408497c087826739e7a1e0a6d2"
             .parse::<Address>()
@@ -123,7 +120,6 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
 
     info!("Setup complete. Detecting arbitrage opportunities...");
     let mut block_stream = provider.subscribe_blocks().await.unwrap();
-    let mut txn_count = 0;
     while let Some(block) = block_stream.next().await {
         let now = Instant::now();
 
@@ -194,11 +190,6 @@ async fn run_loop<P: PubsubClient + Clone + 'static>(
                         })
                         .collect::<Vec<String>>(),
                 );
-                txn_count += 1;
-                if txn_count > 5 {
-                    process::exit(1);
-                }
-
                 break;
             }
         }
@@ -277,25 +268,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             amount_in: U256::from(300) * U256::exp10(USDT.get_decimals().into()),
             token_path: vec![USDT, WMATIC, USDT],
         },
-        // Route {
-        //     amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
-        //     token_path: vec![DAI, WETH, DAI],
-        // },
-        // Route {
-        //     amount_in: U256::from(300) * U256::exp10(DAI.get_decimals().into()),
-        //     token_path: vec![DAI, WMATIC, DAI],
-        // },
     ];
 
     let rpc_node_ws_url = std::env::var("ALCHEMY_POLYGON_RPC_WS_URL")?;
     let alc_provider_ws = Arc::new(Provider::<Ws>::connect(&rpc_node_ws_url).await?);
     if args.use_ipc {
         info!("Using IPC");
-        let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+        let provider_ipc = Provider::connect_ipc("path/to/your/bor.ipc").await?;
         let provider_ipc = Arc::new(provider_ipc);
         run_loop(
             provider_ipc,
-            Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?,
+            Provider::connect_ipc("path/to/your/bor.ipc").await?,
             routes,
         )
         .await;

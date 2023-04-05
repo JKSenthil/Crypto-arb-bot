@@ -244,9 +244,9 @@ async fn debug_traceBlock<M: JsonRpcClient>(
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    let provider_ipc = Provider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let provider_ipc = Provider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
     let provider_ipc = Arc::new(provider_ipc);
-    let batch_provider_ipc = BatchProvider::connect_ipc("/home/jsenthil/.bor/data/bor.ipc").await?;
+    let batch_provider_ipc = BatchProvider::connect_ipc("/home/user/.bor/data/bor.ipc").await?;
 
     // let wallet = std::env::var("PRIVATE_KEY")
     //     .unwrap()
